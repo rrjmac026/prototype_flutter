@@ -1,0 +1,2 @@
+D:/Jam/Capstone Thesis/prototype/android/app/.cxx/RelWithDebInfo/3r5t1h3e/arm64-v8a/CMakeFiles/edit_cache.dir
+D:/Jam/Capstone Thesis/prototype/android/app/.cxx/RelWithDebInfo/3r5t1h3e/arm64-v8a/CMakeFiles/rebuild_cache.dir

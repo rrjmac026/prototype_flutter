@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "pdfkit-table": "^0.1.99"
+  }
+}
