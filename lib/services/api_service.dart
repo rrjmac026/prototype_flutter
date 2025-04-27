@@ -1,8 +1,11 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:prototype/models/message.dart';
 
 class ApiService {
   static const String baseUrl = 'https://server-6x62.onrender.com/api';
@@ -10,16 +13,42 @@ class ApiService {
       'C8dA5OfZEC1EGAhkdAB4'; // Match ESP32's FIXED_PLANT_ID
   static const String defaultPlantName = 'Default Plant';
 
+  Future<bool> checkServerHealth() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/health'),
+        headers: {'Accept': 'application/json'},
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Server timeout'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['status']?.toString().contains('running') ?? false;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Health check failed: $e');
+      return false;
+    }
+  }
+
   // Get latest sensor data
   Future<Map<String, dynamic>> getLatestSensorData(String plantId) async {
     try {
       debugPrint('Fetching sensor data for plant: $plantId');
-      // Updated endpoint to match server.js implementation
       final response = await http.get(
         Uri.parse('$baseUrl/plants/$plantId/latest-sensor-data'),
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('Request timed out');
+          throw TimeoutException('Request timed out');
         },
       );
 
@@ -30,7 +59,11 @@ class ApiService {
         final data = json.decode(response.body);
         debugPrint('Parsed data: $data');
 
-        // Handle the response format from server.js
+        if (data == null) {
+          debugPrint('Received null data from server');
+          return _getDefaultData();
+        }
+
         return {
           'moisture': data['moisture'] ?? 0,
           'temperature': data['temperature'] ?? 0,
@@ -41,9 +74,12 @@ class ApiService {
               : DateTime.now().toIso8601String(),
         };
       } else {
-        debugPrint('Error response: ${response.body}');
+        debugPrint('Error response: ${response.statusCode} - ${response.body}');
         return _getDefaultData();
       }
+    } on TimeoutException catch (e) {
+      debugPrint('Timeout error: $e');
+      return _getDefaultData();
     } catch (e) {
       debugPrint('Error fetching sensor data: $e');
       return _getDefaultData();
@@ -89,18 +125,49 @@ class ApiService {
   Future<List<int>> generateReport(
       String plantId, DateTime start, DateTime end) async {
     try {
+      // Check server health first
+      final isHealthy = await checkServerHealth();
+      if (!isHealthy) {
+        throw Exception('Server is not available. Please try again later.');
+      }
+
+      final queryParams = {
+        'plantId': plantId,
+        'start': start.toUtc().toIso8601String(),
+        'end': end.toUtc().toIso8601String(),
+        'format': 'pdf'
+      };
+
+      final uri =
+          Uri.parse('$baseUrl/reports').replace(queryParameters: queryParams);
+      debugPrint('Requesting report from: $uri');
+
       final response = await http.get(
-        Uri.parse(
-          '$baseUrl/reports/$plantId?start=${start.toIso8601String()}&end=${end.toIso8601String()}',
-        ),
+        uri,
         headers: {'Accept': 'application/pdf'},
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception('Request timed out'),
       );
 
       if (response.statusCode == 200) {
+        if (response.bodyBytes.isEmpty) {
+          throw Exception('Empty PDF received from server');
+        }
         return response.bodyBytes;
-      } else {
-        throw Exception('Failed to generate report');
       }
+
+      // Handle error responses
+      String errorMessage;
+      try {
+        final errorJson = json.decode(response.body);
+        errorMessage = errorJson['error'] ?? 'Unknown server error';
+      } catch (_) {
+        errorMessage = response.body.contains('<!DOCTYPE html>')
+            ? 'Server error: Invalid response format'
+            : 'Server error: ${response.statusCode}';
+      }
+      throw Exception(errorMessage);
     } catch (e) {
       debugPrint('Error generating report: $e');
       rethrow;
@@ -138,6 +205,24 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('Error updating plant: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Message>> getGSMMessages() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/messages'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        return data.map((json) => Message.fromJson(json)).toList();
+      }
+      throw Exception('Failed to fetch messages');
+    } catch (e) {
+      debugPrint('Error fetching messages: $e');
       rethrow;
     }
   }
