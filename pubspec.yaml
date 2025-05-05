@@ -17,9 +17,7 @@ dependencies:
   http: ^1.1.0
   image_picker: ^1.0.7
   path_provider: ^2.1.2
-  fl_chart: ^0.66.2
-  url_launcher: ^6.1.14
-  share_plus: ^7.2.1
+  fl_chart: ^0.66.2  # Add this line
 
 dev_dependencies:
   flutter_test:

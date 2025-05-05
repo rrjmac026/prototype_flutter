@@ -4,17 +4,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:prototype/providers/theme_provider.dart';
 import 'package:prototype/providers/settings_provider.dart';
 import 'package:prototype/providers/user_provider.dart';
-import 'package:prototype/providers/plant_data_provider.dart';
-import 'package:prototype/models/plant_data.dart';
-import 'package:prototype/models/message.dart';
+import 'package:prototype/providers/plant_data_provider.dart'; // Add this
+import 'package:prototype/models/plant_data.dart'; // Add this
 import 'dart:io';
-import 'dart:async';
+import 'dart:async'; // Add this for Timer
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:prototype/services/api_service.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,19 +26,22 @@ class _ProfileScreenState extends State<ProfileScreen>
   String _username = 'Jam Mac';
   String _bio = 'Plant Enthusiast';
   File? _profileImage;
-  String? _profileImagePath;
+  String? _profileImagePath; // Add this line
   late TabController _tabController;
   List<Map<String, dynamic>> _alerts = [];
-  Timer? _alertsTimer;
+  Timer? _alertsTimer; // Add this
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadProfileData();
-    _startAlertsCheck();
+    _startAlertsCheck(); // Remove _startRealtimeUpdates()
   }
 
+  // Remove _startRealtimeUpdates() and _updateReadings() methods
+
+  // Update any widget that uses _recentReadings to use this instead:
   List<PlantData> get _recentReadings =>
       Provider.of<PlantDataProvider>(context, listen: false).historicalReadings;
 
@@ -57,6 +56,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     final data = provider.latestData;
 
     if (data != null) {
+      // Check moisture
       if (data.soilMoisture < 20) {
         setState(() {
           _alerts.insert(0, {
@@ -67,6 +67,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
 
+      // Check temperature
       if (data.temperature > 30) {
         setState(() {
           _alerts.insert(0, {
@@ -77,6 +78,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
 
+      // Check humidity
       if (data.humidity < 40) {
         setState(() {
           _alerts.insert(0, {
@@ -87,6 +89,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
 
+      // Keep only last 10 alerts
       if (_alerts.length > 10) {
         setState(() {
           _alerts = _alerts.take(10).toList();
@@ -192,7 +195,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       _profileImage = File(photo.path);
                       _profileImagePath = photo.path;
                     });
-                    await _saveProfileData();
+                    await _saveProfileData(); // Save after updating image
                   }
                 },
               ),
@@ -210,7 +213,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       _profileImage = File(image.path);
                       _profileImagePath = image.path;
                     });
-                    await _saveProfileData();
+                    await _saveProfileData(); // Save after updating image
                   }
                 },
               ),
@@ -226,7 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       _profileImage = null;
                       _profileImagePath = null;
                     });
-                    await _saveProfileData();
+                    await _saveProfileData(); // Save after removing image
                   },
                 ),
             ],
@@ -236,255 +239,62 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Future<void> _shareFile(String filePath) async {
+  Future<void> _generateReport() async {
     try {
-      await Share.shareFiles(
-        [filePath],
-        text: 'Plant Report',
-        subject: 'Plant Monitoring Report',
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error sharing file: $e'),
-          backgroundColor: Colors.red,
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
         ),
       );
-    }
-  }
 
-  Future<void> _openFile(String filePath) async {
-    await _shareFile(filePath);
-  }
+      final now = DateTime.now();
+      final lastMonth = DateTime(now.year, now.month - 1, now.day);
 
-  Future<DateTimeRange?> _showDateRangePicker() async {
-    final initialDateRange = DateTimeRange(
-      start: DateTime.now().subtract(const Duration(days: 30)),
-      end: DateTime.now(),
-    );
+      // Generate report for the last month
+      final reportData = await ApiService().generateReport(
+        'plant1', // You can modify this to use actual plant ID
+        lastMonth,
+        now,
+      );
 
-    return await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2023),
-      lastDate: DateTime.now(),
-      initialDateRange: initialDateRange,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            primaryColor: Theme.of(context).colorScheme.primary,
-            colorScheme: ColorScheme.light(
-              primary: Theme.of(context).colorScheme.primary,
+      // Hide loading dialog
+      Navigator.pop(context);
+
+      // Show success dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Success'),
+          content: const Text('Report generated successfully!'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
             ),
-          ),
-          child: child!,
-        );
-      },
-    );
-  }
+          ],
+        ),
+      );
+    } catch (e) {
+      // Hide loading dialog
+      Navigator.pop(context);
 
-  Future<void> _generateReport() async {
-    // Show date range picker first
-    final dateRange = await _showDateRangePicker();
-    if (dateRange == null) return;
-
-    int retryCount = 0;
-    const maxRetries = 3;
-    late BuildContext dialogContext;
-
-    while (retryCount < maxRetries) {
-      try {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext ctx) {
-            dialogContext = ctx;
-            return Center(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 16),
-                      Text(
-                        retryCount > 0
-                            ? 'Retrying... (${retryCount + 1}/$maxRetries)'
-                            : 'Generating report...',
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'From: ${DateFormat('MMM dd, yyyy').format(dateRange.start)}\n'
-                        'To: ${DateFormat('MMM dd, yyyy').format(dateRange.end)}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-
-        // Convert local time to UTC for the API
-        final startUtc = DateTime.utc(
-          dateRange.start.year,
-          dateRange.start.month,
-          dateRange.start.day,
-        );
-        final endUtc = DateTime.utc(
-          dateRange.end.year,
-          dateRange.end.month,
-          dateRange.end.day,
-          23, 59, 59, // End of day
-        );
-
-        final reportData = await ApiService().generateReport(
-          ApiService.defaultPlantId,
-          startUtc,
-          endUtc,
-        );
-
-        if (!context.mounted) return;
-        Navigator.of(dialogContext).pop();
-
-        final tempDir = await getTemporaryDirectory();
-        final fileName =
-            'plant_report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(reportData);
-
-        if (!context.mounted) return;
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green.shade400),
-                const SizedBox(width: 8),
-                const Text('Success'),
-              ],
+      // Show error dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Failed to generate report: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Report generated successfully!'),
-                const SizedBox(height: 8),
-                Text(
-                  'Saved as: $fileName',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => _shareFile(file.path),
-                child: const Text('Share Report'),
-              ),
-              TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Report saved to: ${file.path}'),
-                      duration: const Duration(seconds: 5),
-                      action: SnackBarAction(
-                        label: 'Share',
-                        onPressed: () => _shareFile(file.path),
-                      ),
-                    ),
-                  );
-                  Navigator.pop(context);
-                },
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
-        return;
-      } catch (e) {
-        if (!context.mounted) return;
-        Navigator.of(dialogContext).pop();
-
-        retryCount++;
-        final errorMessage = e.toString().replaceAll('Exception: ', '');
-        final canRetry =
-            !errorMessage.contains('Empty PDF') && retryCount < maxRetries;
-
-        if (canRetry) {
-          final shouldRetry = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.orange.shade400),
-                  const SizedBox(width: 8),
-                  Text('Error (${retryCount + 1}/$maxRetries)'),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(errorMessage),
-                  const SizedBox(height: 8),
-                  const Text('Would you like to retry?'),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          );
-          if (shouldRetry ?? false) continue;
-        }
-
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.error_outline, color: Colors.red.shade400),
-                const SizedBox(width: 8),
-                const Text('Error'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(errorMessage),
-                if (retryCount >= maxRetries) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Maximum retry attempts reached',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.orange.shade800,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-        break;
-      }
+          ],
+        ),
+      );
     }
   }
 
@@ -581,6 +391,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           _buildStatCard('Total Plants', '1'),
           _buildStatCard('Active Alerts', _alerts.length.toString()),
+          // Add Generate Report Card
           Card(
             child: InkWell(
               onTap: _generateReport,
@@ -686,10 +497,13 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildAlertsTab() {
-    return ListView.builder(
+    return Padding(
       padding: const EdgeInsets.all(16),
-      itemCount: _alerts.length,
-      itemBuilder: (context, index) => _buildAlertCard(_alerts[index]),
+      child: Column(
+        children: [
+          for (var alert in _alerts) _buildAlertCard(alert),
+        ],
+      ),
     );
   }
 
@@ -759,6 +573,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
             const SizedBox(height: 8),
+            // Add legend
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -897,7 +712,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   void dispose() {
-    _alertsTimer?.cancel();
+    _alertsTimer?.cancel(); // Add this
     _tabController.dispose();
     super.dispose();
   }

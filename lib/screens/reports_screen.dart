@@ -148,53 +148,31 @@ class _ReportsScreenState extends State<ReportsScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
       final reportData = await ApiService().generateReport(
-        ApiService.defaultPlantId,
+        ApiService.defaultPlantId, // Use default plant ID
         _selectedDateRange!.start,
         _selectedDateRange!.end,
       );
 
-      if (!context.mounted) return;
-      Navigator.pop(context); // Hide loading dialog
+      if (context.mounted) {
+        Navigator.pop(context); // Hide loading dialog
+      }
 
-      // Save and open PDF
       final tempDir = await getTemporaryDirectory();
-      final file = File(
-          '${tempDir.path}/plant_report_${DateTime.now().millisecondsSinceEpoch}.pdf');
+      final file = File('${tempDir.path}/plant_report.pdf');
       await file.writeAsBytes(reportData);
 
-      if (!context.mounted) return;
-
-      // Show success dialog with options
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Report Generated'),
-          content: const Text('Report has been generated successfully.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
+      await OpenFile.open(file.path);
     } catch (e) {
-      if (!context.mounted) return;
-      Navigator.pop(context); // Hide loading dialog
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error generating report: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (context.mounted) {
+        Navigator.pop(context); // Hide loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error generating report: $e')),
+        );
+      }
     }
   }
 
