@@ -5,49 +5,72 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.8:3000/api/sensor-data';
+  static const String baseUrl = 'http://192.168.1.8:3000/api';
+  static const String backupUrl = 'https://server-5527.onrender.com/api';
   static const String defaultPlantId =
       'C8dA5OfZEC1EGAhkdAB4'; // Match ESP32's FIXED_PLANT_ID
   static const String defaultPlantName = 'Default Plant';
+
+  String _getMoistureStatus(double value) {
+    if (value == 1023) return 'NO DATA';
+    if (value >= 1000) return 'SENSOR ERROR';
+    if (value > 600 && value < 1000) return 'DRY';
+    if (value > 370 && value <= 600) return 'HUMID';
+    if (value <= 370) return 'WET';
+    return 'NO DATA';
+  }
 
   // Get latest sensor data
   Future<Map<String, dynamic>> getLatestSensorData(String plantId) async {
     try {
       debugPrint('Fetching sensor data for plant: $plantId');
-      // Updated endpoint to match server.js implementation
-      final response = await http.get(
-        Uri.parse('$baseUrl/plants/$plantId/latest-sensor-data'),
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      );
+      final endpoints = [
+        '$baseUrl/plants/$plantId/latest-sensor-data',
+        '$backupUrl/plants/$plantId/latest-sensor-data'
+      ];
 
-      debugPrint('Response status: ${response.statusCode}');
-      debugPrint('Raw response: ${response.body}');
+      for (final endpoint in endpoints) {
+        try {
+          debugPrint('Trying endpoint: $endpoint');
+          final response = await http.get(
+            Uri.parse(endpoint),
+            headers: {'Accept': 'application/json'},
+          ).timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        debugPrint('Parsed data: $data');
+          debugPrint('Response status: ${response.statusCode}');
+          debugPrint('Raw response: ${response.body}');
 
-        // Handle the response format from server.js
-        return {
-          'moisture': data['moisture'] ?? 0,
-          'temperature': data['temperature'] ?? 0,
-          'humidity': data['humidity'] ?? 0,
-          'moistureStatus': data['moistureStatus'] ?? 'NO_DATA',
-          'timestamp': data['timestamp'] != null
-              ? data['timestamp'].toString()
-              : DateTime.now().toIso8601String(),
-        };
-      } else {
-        debugPrint('Error response: ${response.body}');
-        return _getDefaultData();
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            if (data != null) {
+              final moisture = _parseDoubleValue(data['moisture']);
+              return {
+                'moisture': moisture,
+                'temperature': _parseDoubleValue(data['temperature']),
+                'humidity': _parseDoubleValue(data['humidity']),
+                'moistureStatus': data['moistureStatus'] ?? _getMoistureStatus(moisture),
+                'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
+              };
+            }
+          }
+        } catch (e) {
+          debugPrint('Error with endpoint $endpoint: $e');
+          continue;
+        }
       }
+      return _getDefaultData();
     } catch (e) {
       debugPrint('Error fetching sensor data: $e');
       return _getDefaultData();
     }
+  }
+
+  double _parseDoubleValue(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
   }
 
   Map<String, dynamic> _getDefaultData() {
