@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 class ApiService {
   static const String baseUrl = 'https://server-5527.onrender.com/api';
+  static const String backupUrl = 'http://192.168.1.8:3000/api';
   static const String defaultPlantId =
       'C8dA5OfZEC1EGAhkdAB4'; // Match ESP32's FIXED_PLANT_ID
   static const String defaultPlantName = 'Default Plant';
@@ -25,30 +26,41 @@ class ApiService {
   Future<Map<String, dynamic>> getLatestSensorData(String plantId) async {
     try {
       debugPrint('Fetching sensor data for plant: $plantId');
-      final endpoint = '$baseUrl/plants/$plantId/latest-sensor-data';
+      final endpoints = [
+        '$baseUrl/plants/$plantId/latest-sensor-data',
+        '$backupUrl/sensor-data' // Backup endpoint has different path
+      ];
 
-      debugPrint('Trying endpoint: $endpoint');
-      final response = await http.get(
-        Uri.parse(endpoint),
-        headers: {'Accept': 'application/json'},
-      ).timeout(const Duration(seconds: 10));
+      for (int retry = 0; retry < 2; retry++) {
+        for (final endpoint in endpoints) {
+          try {
+            debugPrint('Trying endpoint: $endpoint');
+            final response = await http.get(
+              Uri.parse(endpoint),
+              headers: {'Accept': 'application/json'},
+            ).timeout(const Duration(seconds: 10));
 
-      debugPrint('Response status: ${response.statusCode}');
-      debugPrint('Raw response: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data != null) {
-          final moisture = _parseDoubleValue(data['moisture']);
-          return {
-            'moisture': moisture,
-            'temperature': _parseDoubleValue(data['temperature']),
-            'humidity': _parseDoubleValue(data['humidity']),
-            'moistureStatus':
-                data['moistureStatus'] ?? _getMoistureStatus(moisture),
-            'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
-          };
+            if (response.statusCode == 200) {
+              final data = json.decode(response.body);
+              if (data != null) {
+                final moisture = _parseDoubleValue(data['moisture']);
+                return {
+                  'moisture': moisture,
+                  'temperature': _parseDoubleValue(data['temperature']),
+                  'humidity': _parseDoubleValue(data['humidity']),
+                  'moistureStatus':
+                      data['moistureStatus'] ?? _getMoistureStatus(moisture),
+                  'timestamp':
+                      data['timestamp'] ?? DateTime.now().toIso8601String(),
+                };
+              }
+            }
+          } catch (e) {
+            debugPrint('Error with endpoint $endpoint: $e');
+            continue;
+          }
         }
+        await Future.delayed(Duration(seconds: retry + 1));
       }
       return _getDefaultData();
     } catch (e) {

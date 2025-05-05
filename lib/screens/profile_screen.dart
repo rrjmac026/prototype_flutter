@@ -14,6 +14,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart'; // Add this for DateFormat
 import 'package:path_provider/path_provider.dart'; // Add this for temporary directory
 import 'package:url_launcher/url_launcher.dart'; // Add this for launching URLs
+import 'dart:convert'; // Add this for jsonEncode
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -210,9 +211,18 @@ class _ProfileScreenState extends State<ProfileScreen>
               start: DateTime.now().subtract(const Duration(days: 7)),
               end: DateTime.now(),
             ),
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              primaryColor: Theme.of(context).colorScheme.primary,
+              colorScheme: Theme.of(context).colorScheme,
+            ),
+            child: child!,
+          );
+        },
       );
 
-      if (pickedRange == null) return; // User cancelled
+      if (pickedRange == null) return;
       _selectedDateRange = pickedRange;
 
       showDialog(
@@ -233,11 +243,38 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
       );
 
-      final url = Uri.parse(
-          '${ApiService.baseUrl}/reports/${ApiService.defaultPlantId}?' +
-              'start=${pickedRange.start.toIso8601String()}&' +
-              'end=${pickedRange.end.toIso8601String()}&' +
-              'format=pdf');
+      // Get theme colors and styling parameters
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final primaryColor = Theme.of(context).colorScheme.primary;
+      final accentColor = Theme.of(context).colorScheme.secondary;
+
+      // Build URL with enhanced styling parameters
+      final url = Uri.parse('${ApiService.baseUrl}/reports?' +
+          'plantId=${ApiService.defaultPlantId}&' +
+          'start=${pickedRange.start.toIso8601String()}&' +
+          'end=${pickedRange.end.toIso8601String()}&' +
+          'format=pdf&' +
+          'style=' +
+          Uri.encodeComponent(jsonEncode({
+            'colors': {
+              'primary':
+                  '#${primaryColor.value.toRadixString(16).substring(2)}',
+              'accent': '#${accentColor.value.toRadixString(16).substring(2)}',
+              'background': isDark ? '#121212' : '#ffffff',
+              'text': isDark ? '#ffffff' : '#000000',
+              'headerBg': isDark ? '#1E1E1E' : '#f5f5f5',
+              'chartLine':
+                  '#${Colors.blue.shade400.value.toRadixString(16).substring(2)}',
+              'chartGrid': isDark ? '#303030' : '#e0e0e0',
+            },
+            'fonts': {'title': 'Roboto', 'body': 'Arial'},
+            'spacing': {'margin': 40, 'padding': 20},
+            'header': {
+              'logo': true,
+              'dateFormat': 'MMM d, y HH:mm',
+              'showPageNumbers': true
+            }
+          })));
 
       if (context.mounted) {
         Navigator.pop(context); // Hide loading dialog
