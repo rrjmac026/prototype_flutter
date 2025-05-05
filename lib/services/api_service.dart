@@ -1,12 +1,13 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
+import 'dart:math'; // Add this import for pow function
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.8:3000/api';
-  static const String backupUrl = 'https://server-5527.onrender.com/api';
+  static const String baseUrl = 'https://server-5527.onrender.com/api';
   static const String defaultPlantId =
       'C8dA5OfZEC1EGAhkdAB4'; // Match ESP32's FIXED_PLANT_ID
   static const String defaultPlantName = 'Default Plant';
@@ -24,38 +25,29 @@ class ApiService {
   Future<Map<String, dynamic>> getLatestSensorData(String plantId) async {
     try {
       debugPrint('Fetching sensor data for plant: $plantId');
-      final endpoints = [
-        '$baseUrl/plants/$plantId/latest-sensor-data',
-        '$backupUrl/plants/$plantId/latest-sensor-data'
-      ];
+      final endpoint = '$baseUrl/plants/$plantId/latest-sensor-data';
 
-      for (final endpoint in endpoints) {
-        try {
-          debugPrint('Trying endpoint: $endpoint');
-          final response = await http.get(
-            Uri.parse(endpoint),
-            headers: {'Accept': 'application/json'},
-          ).timeout(const Duration(seconds: 10));
+      debugPrint('Trying endpoint: $endpoint');
+      final response = await http.get(
+        Uri.parse(endpoint),
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
 
-          debugPrint('Response status: ${response.statusCode}');
-          debugPrint('Raw response: ${response.body}');
+      debugPrint('Response status: ${response.statusCode}');
+      debugPrint('Raw response: ${response.body}');
 
-          if (response.statusCode == 200) {
-            final data = json.decode(response.body);
-            if (data != null) {
-              final moisture = _parseDoubleValue(data['moisture']);
-              return {
-                'moisture': moisture,
-                'temperature': _parseDoubleValue(data['temperature']),
-                'humidity': _parseDoubleValue(data['humidity']),
-                'moistureStatus': data['moistureStatus'] ?? _getMoistureStatus(moisture),
-                'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
-              };
-            }
-          }
-        } catch (e) {
-          debugPrint('Error with endpoint $endpoint: $e');
-          continue;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data != null) {
+          final moisture = _parseDoubleValue(data['moisture']);
+          return {
+            'moisture': moisture,
+            'temperature': _parseDoubleValue(data['temperature']),
+            'humidity': _parseDoubleValue(data['humidity']),
+            'moistureStatus':
+                data['moistureStatus'] ?? _getMoistureStatus(moisture),
+            'timestamp': data['timestamp'] ?? DateTime.now().toIso8601String(),
+          };
         }
       }
       return _getDefaultData();
@@ -109,25 +101,82 @@ class ApiService {
   }
 
   // Generate report
-  Future<List<int>> generateReport(
-      String plantId, DateTime start, DateTime end) async {
+  Future<Map<String, dynamic>> generateReport(
+    String plantId,
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
     try {
+      debugPrint('Generating report...');
+      // Use sensor-data endpoint instead of report since that's what exists
+      final endpoint = '$baseUrl/plants/$plantId/sensor-data';
+
       final response = await http.get(
-        Uri.parse(
-          '$baseUrl/reports/$plantId?start=${start.toIso8601String()}&end=${end.toIso8601String()}',
-        ),
-        headers: {'Accept': 'application/pdf'},
-      );
+        Uri.parse(endpoint).replace(queryParameters: {
+          'startDate': startDate.toIso8601String(),
+          'endDate': endDate.toIso8601String(),
+        }),
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      debugPrint('Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        return response.bodyBytes;
+        final List<dynamic> readings = json.decode(response.body);
+        if (readings.isEmpty) {
+          throw Exception('No data available for selected date range');
+        }
+
+        // Calculate averages from the readings
+        double totalMoisture = 0;
+        double totalTemp = 0;
+        double totalHumidity = 0;
+        int count = readings.length;
+
+        for (var reading in readings) {
+          totalMoisture += _parseDoubleValue(reading['moisture']);
+          totalTemp += _parseDoubleValue(reading['temperature']);
+          totalHumidity += _parseDoubleValue(reading['humidity']);
+        }
+
+        return {
+          'summary': {
+            'averageMoisture': totalMoisture / count,
+            'averageTemperature': totalTemp / count,
+            'averageHumidity': totalHumidity / count,
+          },
+          'readings': readings,
+          'alerts': _generateAlerts(readings),
+          'timestamp': DateTime.now().toIso8601String(),
+        };
       } else {
-        throw Exception('Failed to generate report');
+        throw Exception('Failed to fetch sensor data: ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('Error generating report: $e');
-      rethrow;
+      throw Exception('Unable to generate report: ${e.toString()}');
     }
+  }
+
+  List<Map<String, dynamic>> _generateAlerts(List<dynamic> readings) {
+    final alerts = <Map<String, dynamic>>[];
+    for (var reading in readings) {
+      final moisture = _parseDoubleValue(reading['moisture']);
+      if (moisture >= 1000) {
+        alerts.add({
+          'type': 'error',
+          'message': 'Sensor disconnected',
+          'timestamp': reading['timestamp'],
+        });
+      } else if (moisture > 600) {
+        alerts.add({
+          'type': 'warning',
+          'message': 'Low moisture detected',
+          'timestamp': reading['timestamp'],
+        });
+      }
+    }
+    return alerts;
   }
 
   // Get all plants

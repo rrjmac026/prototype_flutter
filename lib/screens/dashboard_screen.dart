@@ -129,14 +129,7 @@ class DashboardScreen extends StatelessWidget {
           childAspectRatio: 1.6, // Increased from 1.4 to make cards shorter
           padding: const EdgeInsets.symmetric(horizontal: 2), // Reduced padding
           children: [
-            _buildMonitoringCard(
-              icon: Icons.water_drop,
-              title: settings.getLocalizedText('Soil Moisture'),
-              value: data != null
-                  ? '${data.soilMoisture.toStringAsFixed(1)}%'
-                  : 'N/A',
-              color: Colors.blue,
-            ),
+            _buildMoistureCard(data?.toMap()),
             _buildMonitoringCard(
               icon: Icons.thermostat,
               title: settings.getLocalizedText('Temperature'),
@@ -221,6 +214,35 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildMoistureCard(Map<String, dynamic>? data) {
+    final moistureValue = data?['moisture'] ?? 0;
+    final String status = _getMoistureStatus(moistureValue);
+    final Color statusColor = _getMoistureColor(moistureValue);
+
+    return _buildSensorCard(
+      'Soil Moisture',
+      moistureValue.toStringAsFixed(0),
+      status,
+      statusColor,
+      Icons.water_drop,
+      [Colors.blue.shade200, Colors.blue.shade400],
+    );
+  }
+
+  String _getMoistureStatus(num value) {
+    if (value >= 1000) return 'SENSOR ERROR';
+    if (value > 600) return 'DRY SOIL';
+    if (value >= 370) return 'HUMID SOIL';
+    return 'IN WATER';
+  }
+
+  Color _getMoistureColor(num value) {
+    if (value >= 1000) return Colors.red;
+    if (value > 600) return Colors.orange;
+    if (value >= 370) return Colors.blue;
+    return Colors.green;
+  }
+
   Widget _buildWateringSchedule() {
     return Card(
       child: Padding(
@@ -262,23 +284,17 @@ class DashboardScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Sensor Readings',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            const Text('Sensor Readings',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            // Add legend row
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildLegendItem('Moisture', Colors.blue),
+                _buildLegendItem('Moisture (0-1023)', Colors.blue),
                 const SizedBox(width: 16),
-                _buildLegendItem('Humidity', Colors.green),
+                _buildLegendItem('Humidity (%)', Colors.green),
                 const SizedBox(width: 16),
-                _buildLegendItem('Temperature', Colors.orange),
+                _buildLegendItem('Temperature (°C)', Colors.orange),
               ],
             ),
             const SizedBox(height: 8),
@@ -295,39 +311,30 @@ class DashboardScreen extends StatelessWidget {
                       sideTitles: SideTitles(showTitles: false),
                     ),
                     leftTitles: AxisTitles(
+                      axisNameWidget: const Text('Value'),
                       sideTitles: SideTitles(
                         showTitles: true,
                         getTitlesWidget: (value, meta) {
                           return Text(
-                            value.toStringAsFixed(0),
+                            value.toInt().toString(),
                             style: const TextStyle(
                               color: Colors.grey,
                               fontSize: 10,
                             ),
                           );
                         },
+                        interval: 200, // Adjust interval for better readability
                       ),
                     ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) {
-                          if (value == 1) return const Text('Moisture');
-                          if (value == 2) return const Text('Humidity');
-                          if (value == 3) return const Text('Temp');
-                          return const Text('');
-                        },
-                      ),
+                    bottomTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
                     ),
                   ),
                   borderData: FlBorderData(show: true),
                   lineBarsData: [
+                    // Moisture line (raw values 0-1023)
                     LineChartBarData(
-                      spots: [
-                        FlSpot(1, data.soilMoisture),
-                        FlSpot(2, data.humidity),
-                        FlSpot(3, data.temperature),
-                      ],
+                      spots: [FlSpot(0, data.soilMoisture)],
                       isCurved: true,
                       color: Colors.blue,
                       dotData: const FlDotData(show: true),
@@ -336,30 +343,23 @@ class DashboardScreen extends StatelessWidget {
                         color: Colors.blue.withOpacity(0.2),
                       ),
                     ),
-                    // Add separate lines for humidity and temperature
+                    // Humidity line (0-100%)
                     LineChartBarData(
-                      spots: [
-                        FlSpot(1, 0),
-                        FlSpot(2, data.humidity),
-                        FlSpot(3, 0),
-                      ],
+                      spots: [FlSpot(1, data.humidity)],
                       isCurved: true,
                       color: Colors.green,
                       dotData: const FlDotData(show: true),
                     ),
+                    // Temperature line (°C)
                     LineChartBarData(
-                      spots: [
-                        FlSpot(1, 0),
-                        FlSpot(2, 0),
-                        FlSpot(3, data.temperature),
-                      ],
+                      spots: [FlSpot(2, data.temperature)],
                       isCurved: true,
                       color: Colors.orange,
                       dotData: const FlDotData(show: true),
                     ),
                   ],
                   minY: 0,
-                  maxY: 100,
+                  maxY: 1023, // Set max Y to accommodate moisture sensor range
                 ),
               ),
             ),
@@ -389,6 +389,71 @@ class DashboardScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSensorCard(
+    String title,
+    String value,
+    String status,
+    Color statusColor,
+    IconData icon,
+    List<Color> gradientColors,
+  ) {
+    return Card(
+      elevation: 1,
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          gradient: LinearGradient(
+            colors: gradientColors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 24, color: Colors.white),
+            const SizedBox(height: 2),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 1),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                status,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: statusColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

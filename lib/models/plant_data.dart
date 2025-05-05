@@ -47,4 +47,14 @@ class PlantData {
       'timestamp': timestamp.toIso8601String(),
     };
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'moisture': soilMoisture,
+      'temperature': temperature,
+      'humidity': humidity,
+      'moistureStatus': moistureStatus,
+      'timestamp': timestamp.toIso8601String(),
+    };
+  }
 }

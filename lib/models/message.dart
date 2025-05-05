@@ -1,4 +1,10 @@
-enum MessageType { watering, moisture, conservation, system }
+enum MessageType {
+  warning, // General system warnings
+  critical, // Critical alerts
+  info // Information messages
+}
+
+enum MessagePriority { normal, warning, critical }
 
 class Message {
   final String id;
@@ -6,7 +12,7 @@ class Message {
   final String content;
   final DateTime timestamp;
   final MessageType type;
-  final bool isRead;
+  final MessagePriority priority;
 
   Message({
     required this.id,
@@ -14,19 +20,6 @@ class Message {
     required this.content,
     required this.timestamp,
     required this.type,
-    this.isRead = false,
+    this.priority = MessagePriority.normal,
   });
-
-  factory Message.fromJson(Map<String, dynamic> json) {
-    return Message(
-      id: json['id'],
-      title: json['title'],
-      content: json['content'],
-      timestamp: DateTime.parse(json['timestamp']),
-      type: MessageType.values.firstWhere(
-        (e) => e.toString() == 'MessageType.${json['type']}',
-      ),
-      isRead: json['isRead'] ?? false,
-    );
-  }
 }

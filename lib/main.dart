@@ -6,18 +6,12 @@ import 'package:prototype/screens/home_screen.dart';
 import 'package:prototype/providers/plant_data_provider.dart';
 import 'package:prototype/providers/settings_provider.dart';
 import 'package:prototype/providers/user_provider.dart';
+import 'package:prototype/providers/message_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiProvider(
+  runApp(
+    MultiProvider(
       providers: [
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider()..loadTheme(),
@@ -31,18 +25,30 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<UserProvider>(
           create: (_) => UserProvider()..init(),
         ),
+        ChangeNotifierProvider<MessageProvider>(
+          create: (_) => MessageProvider(),
+        ),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
-          return MaterialApp(
-            title: 'Plant Monitor',
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode: themeProvider.themeMode,
-            home: const HomeScreen(),
-          );
-        },
-      ),
+      child: const MyApp(),
+    ),
+  );
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp(
+          title: 'Plant Monitor',
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: themeProvider.themeMode,
+          home: const HomeScreen(),
+        );
+      },
     );
   }
 }

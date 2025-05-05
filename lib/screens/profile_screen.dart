@@ -11,6 +11,9 @@ import 'dart:async'; // Add this for Timer
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:prototype/services/api_service.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart'; // Add this for DateFormat
+import 'package:path_provider/path_provider.dart'; // Add this for temporary directory
+import 'package:url_launcher/url_launcher.dart'; // Add this for launching URLs
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,13 +33,14 @@ class _ProfileScreenState extends State<ProfileScreen>
   late TabController _tabController;
   List<Map<String, dynamic>> _alerts = [];
   Timer? _alertsTimer; // Add this
+  DateTimeRange? _selectedDateRange; // Add this
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController =
+        TabController(length: 2, vsync: this); // Changed from 3 to 2
     _loadProfileData();
-    _startAlertsCheck(); // Remove _startRealtimeUpdates()
   }
 
   // Remove _startRealtimeUpdates() and _updateReadings() methods
@@ -44,59 +48,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   // Update any widget that uses _recentReadings to use this instead:
   List<PlantData> get _recentReadings =>
       Provider.of<PlantDataProvider>(context, listen: false).historicalReadings;
-
-  void _startAlertsCheck() {
-    _alertsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _checkAlerts();
-    });
-  }
-
-  void _checkAlerts() {
-    final provider = Provider.of<PlantDataProvider>(context, listen: false);
-    final data = provider.latestData;
-
-    if (data != null) {
-      // Check moisture
-      if (data.soilMoisture < 20) {
-        setState(() {
-          _alerts.insert(0, {
-            'type': 'warning',
-            'message': 'Low soil moisture detected (${data.soilMoisture}%)',
-            'time': DateTime.now(),
-          });
-        });
-      }
-
-      // Check temperature
-      if (data.temperature > 30) {
-        setState(() {
-          _alerts.insert(0, {
-            'type': 'warning',
-            'message': 'High temperature detected (${data.temperature}°C)',
-            'time': DateTime.now(),
-          });
-        });
-      }
-
-      // Check humidity
-      if (data.humidity < 40) {
-        setState(() {
-          _alerts.insert(0, {
-            'type': 'warning',
-            'message': 'Low humidity detected (${data.humidity}%)',
-            'time': DateTime.now(),
-          });
-        });
-      }
-
-      // Keep only last 10 alerts
-      if (_alerts.length > 10) {
-        setState(() {
-          _alerts = _alerts.take(10).toList();
-        });
-      }
-    }
-  }
 
   Future<void> _loadProfileData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -127,7 +78,12 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _editProfile() async {
-    final result = await showDialog<Map<String, String>>(
+    final TextEditingController nameController =
+        TextEditingController(text: _username);
+    final TextEditingController bioController =
+        TextEditingController(text: _bio);
+
+    final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Edit Profile'),
@@ -135,28 +91,31 @@ class _ProfileScreenState extends State<ProfileScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: TextEditingController(text: _username),
-              decoration: const InputDecoration(labelText: 'Name'),
-              onChanged: (value) => _username = value,
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                border: OutlineInputBorder(),
+              ),
             ),
+            const SizedBox(height: 16),
             TextField(
-              controller: TextEditingController(text: _bio),
-              decoration: const InputDecoration(labelText: 'Bio'),
-              onChanged: (value) => _bio = value,
+              controller: bioController,
+              decoration: const InputDecoration(
+                labelText: 'Bio',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
-              Navigator.pop(context, {
-                'username': _username,
-                'bio': _bio,
-              });
+              Navigator.pop(context, true);
             },
             child: const Text('Save'),
           ),
@@ -164,10 +123,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
 
-    if (result != null) {
+    if (result == true) {
       setState(() {
-        _username = result['username']!;
-        _bio = result['bio']!;
+        _username = nameController.text;
+        _bio = bioController.text;
       });
       await _saveProfileData();
     }
@@ -241,61 +200,76 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Future<void> _generateReport() async {
     try {
-      // Show loading dialog
+      // Show date picker first
+      final pickedRange = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime.now().subtract(const Duration(days: 365)),
+        lastDate: DateTime.now(),
+        initialDateRange: _selectedDateRange ??
+            DateTimeRange(
+              start: DateTime.now().subtract(const Duration(days: 7)),
+              end: DateTime.now(),
+            ),
+      );
+
+      if (pickedRange == null) return; // User cancelled
+      _selectedDateRange = pickedRange;
+
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-
-      final now = DateTime.now();
-      final lastMonth = DateTime(now.year, now.month - 1, now.day);
-
-      // Generate report for the last month
-      final reportData = await ApiService().generateReport(
-        'plant1', // You can modify this to use actual plant ID
-        lastMonth,
-        now,
-      );
-
-      // Hide loading dialog
-      Navigator.pop(context);
-
-      // Show success dialog
-      showDialog(
-        context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Success'),
-          content: const Text('Report generated successfully!'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Generating report for:\n${DateFormat('MMM d').format(pickedRange.start)} - ${DateFormat('MMM d').format(pickedRange.end)}',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       );
+
+      final url = Uri.parse(
+          '${ApiService.baseUrl}/reports/${ApiService.defaultPlantId}?' +
+              'start=${pickedRange.start.toIso8601String()}&' +
+              'end=${pickedRange.end.toIso8601String()}&' +
+              'format=pdf');
+
+      if (context.mounted) {
+        Navigator.pop(context); // Hide loading dialog
+
+        if (await canLaunchUrl(url)) {
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+        } else {
+          throw Exception('Could not launch report URL');
+        }
+      }
     } catch (e) {
-      // Hide loading dialog
-      Navigator.pop(context);
-
-      // Show error dialog
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Error'),
-          content: Text('Failed to generate report: $e'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate report: $e')),
+        );
+      }
     }
+  }
+
+  Widget _buildReportSection(String title, List<String> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        ...items.map((item) => Padding(
+              padding: const EdgeInsets.only(left: 16, bottom: 4),
+              child: Text('• $item'),
+            )),
+      ],
+    );
   }
 
   @override
@@ -326,7 +300,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                   tabs: const [
                     Tab(text: 'Overview'),
                     Tab(text: 'Readings'),
-                    Tab(text: 'Alerts'),
                   ],
                 ),
                 Expanded(
@@ -335,7 +308,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                     children: [
                       SingleChildScrollView(child: _buildOverviewTab()),
                       SingleChildScrollView(child: _buildReadingsTab()),
-                      SingleChildScrollView(child: _buildAlertsTab()),
                     ],
                   ),
                 ),
@@ -352,31 +324,61 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          GestureDetector(
-            onTap: _handleImageSelection,
-            child: CircleAvatar(
-              radius: 50,
-              backgroundImage:
-                  _profileImage != null ? FileImage(_profileImage!) : null,
-              child: _profileImage == null
-                  ? const Icon(Icons.person, size: 50)
-                  : null,
-            ),
+          Stack(
+            children: [
+              GestureDetector(
+                onTap: _handleImageSelection,
+                child: CircleAvatar(
+                  radius: 50,
+                  backgroundImage:
+                      _profileImage != null ? FileImage(_profileImage!) : null,
+                  child: _profileImage == null
+                      ? const Icon(Icons.person, size: 50)
+                      : null,
+                ),
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.edit, color: Colors.white, size: 20),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          Text(
-            _username,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          Text(
-            _bio,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white70,
+          GestureDetector(
+            onTap: _editProfile,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Column(
+                  children: [
+                    Text(
+                      _username,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      _bio,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.edit, color: Colors.white70, size: 16),
+              ],
             ),
           ),
         ],
@@ -496,17 +498,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildAlertsTab() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          for (var alert in _alerts) _buildAlertCard(alert),
-        ],
-      ),
-    );
-  }
-
   Widget _buildStatCard(String title, String value) {
     return Card(
       child: Padding(
@@ -532,7 +523,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     return _recentReadings.map((reading) {
       return Card(
         child: ListTile(
-          title: Text('Moisture: ${reading.soilMoisture}%'),
+          title: Text(
+              'Moisture: ${reading.soilMoisture.toStringAsFixed(0)} (${_getMoistureStatus(reading.soilMoisture)})'),
           subtitle: Text(
             'Temperature: ${reading.temperature}°C | Humidity: ${reading.humidity}%',
           ),
@@ -544,18 +536,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }).toList();
   }
 
-  Widget _buildAlertCard(Map<String, dynamic> alert) {
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.warning, color: Colors.orange),
-        title: Text(alert['message']),
-        subtitle: Text(
-          TimeOfDay.fromDateTime(alert['time']).format(context),
-        ),
-      ),
-    );
-  }
-
   Widget _buildReadingsChart() {
     if (_recentReadings.isEmpty) return const SizedBox.shrink();
 
@@ -565,100 +545,98 @@ class _ProfileScreenState extends State<ProfileScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Sensor Reading History',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
+            const Text('Soil Moisture Readings',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildLegendItem('Raw Value (0-1023)', Colors.blue),
+                  const SizedBox(width: 16),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _buildStatusLegendItem('Error >1000', Colors.red),
+                      _buildStatusLegendItem('Dry >600', Colors.orange),
+                      _buildStatusLegendItem('Humid >370', Colors.blue),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            // Add legend
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildLegendItem('Moisture', Colors.blue),
-                const SizedBox(width: 16),
-                _buildLegendItem('Humidity', Colors.green),
-                const SizedBox(width: 16),
-                _buildLegendItem('Temperature', Colors.orange),
-              ],
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             SizedBox(
               height: 200,
               child: LineChart(
                 LineChartData(
-                  gridData: FlGridData(
+                  gridData: const FlGridData(
                     show: true,
-                    drawVerticalLine: true,
-                    horizontalInterval: 10,
-                    verticalInterval: 1,
+                    horizontalInterval: 100,
                   ),
                   titlesData: FlTitlesData(
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 30,
-                        interval: 1,
-                        getTitlesWidget: (double value, TitleMeta meta) {
-                          if (value % 1 == 0) {
-                            return Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Text(
-                                '${_recentReadings.length - value.toInt()}m',
-                                style: TextStyle(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface
-                                      .withOpacity(0.6),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            );
-                          }
-                          return const SizedBox();
-                        },
-                      ),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: 20,
-                        getTitlesWidget: (value, meta) {
-                          return Text(
-                            value.toStringAsFixed(0),
-                            style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withOpacity(0.6),
-                              fontSize: 12,
-                            ),
-                          );
-                        },
-                        reservedSize: 40,
-                      ),
-                    ),
                     rightTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
                     topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: 200,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toInt().toString(),
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 10,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index < _recentReadings.length) {
+                            return Text(
+                              TimeOfDay.fromDateTime(
+                                      _recentReadings[index].timestamp)
+                                  .format(context),
+                              style: const TextStyle(fontSize: 8),
+                            );
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
                   ),
-                  borderData: FlBorderData(show: false),
+                  borderData: FlBorderData(show: true),
                   minX: 0,
                   maxX: (_recentReadings.length - 1).toDouble(),
                   minY: 0,
-                  maxY: 100,
+                  maxY: 1023,
                   lineBarsData: [
-                    _createLineBarsData(_recentReadings,
-                        (reading) => reading.soilMoisture, Colors.blue),
-                    _createLineBarsData(_recentReadings,
-                        (reading) => reading.humidity, Colors.green),
-                    _createLineBarsData(_recentReadings,
-                        (reading) => reading.temperature, Colors.orange),
+                    LineChartBarData(
+                      spots: _recentReadings
+                          .asMap()
+                          .entries
+                          .map((e) => FlSpot(
+                                e.key.toDouble(),
+                                e.value.soilMoisture,
+                              ))
+                          .toList(),
+                      isCurved: true,
+                      color: Colors.blue,
+                      dotData: const FlDotData(show: true),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: Colors.blue.withOpacity(0.1),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -667,6 +645,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
       ),
     );
+  }
+
+  String _getMoistureStatus(num value) {
+    if (value >= 1000) return 'SENSOR ERROR';
+    if (value > 600) return 'DRY SOIL';
+    if (value >= 370) return 'HUMID SOIL';
+    return 'IN WATER';
   }
 
   Widget _buildLegendItem(String label, Color color) {
@@ -693,20 +678,14 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  LineChartBarData _createLineBarsData(
-    List<PlantData> readings,
-    double Function(PlantData) getValue,
-    Color color,
-  ) {
-    return LineChartBarData(
-      spots: readings
-          .asMap()
-          .entries
-          .map((e) => FlSpot(e.key.toDouble(), getValue(e.value)))
-          .toList(),
-      isCurved: true,
-      color: color,
-      dotData: const FlDotData(show: true),
+  Widget _buildStatusLegendItem(String text, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.circle, color: color, size: 12),
+        const SizedBox(width: 4),
+        Text(text, style: const TextStyle(fontSize: 12)),
+      ],
     );
   }
 

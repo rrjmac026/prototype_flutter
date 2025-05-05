@@ -139,38 +139,99 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Future<void> _generateReport() async {
     if (_selectedDateRange == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a date range first')),
+        const SnackBar(
+          content: Text('Please select a date range using the calendar icon'),
+          duration: Duration(seconds: 3),
+        ),
       );
       return;
     }
 
     try {
+      // Show loading dialog with progress details
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text('Generating Report...'),
+              const SizedBox(height: 8),
+              Text(
+                'Date Range: ${DateFormat('MMM dd, yyyy').format(_selectedDateRange!.start)} - ${DateFormat('MMM dd, yyyy').format(_selectedDateRange!.end)}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       );
 
+      // Generate report
       final reportData = await ApiService().generateReport(
-        ApiService.defaultPlantId, // Use default plant ID
+        ApiService.defaultPlantId,
         _selectedDateRange!.start,
         _selectedDateRange!.end,
       );
 
       if (context.mounted) {
         Navigator.pop(context); // Hide loading dialog
+
+        // Show report preview dialog
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Report Generated'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      'Period: ${DateFormat('MMM dd, yyyy').format(_selectedDateRange!.start)} - '
+                      '${DateFormat('MMM dd, yyyy').format(_selectedDateRange!.end)}'),
+                  const SizedBox(height: 16),
+                  const Text('Summary:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(
+                      'Average Moisture: ${reportData['summary']['averageMoisture'].toStringAsFixed(1)}'),
+                  Text(
+                      'Average Temperature: ${reportData['summary']['averageTemperature'].toStringAsFixed(1)}°C'),
+                  Text(
+                      'Average Humidity: ${reportData['summary']['averageHumidity'].toStringAsFixed(1)}%'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  // TODO: Implement PDF download
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Report saved successfully')),
+                  );
+                },
+                child: const Text('Download PDF'),
+              ),
+            ],
+          ),
+        );
       }
-
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/plant_report.pdf');
-      await file.writeAsBytes(reportData);
-
-      await OpenFile.open(file.path);
     } catch (e) {
       if (context.mounted) {
         Navigator.pop(context); // Hide loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error generating report: $e')),
+          SnackBar(
+            content: Text('Failed to generate report: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
