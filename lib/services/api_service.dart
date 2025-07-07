@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math'; // Add this import for pow function
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:prototype/utils/report_config.dart';
 
 class ApiService {
   static const String baseUrl = 'https://server-5527.onrender.com/api';
@@ -52,6 +53,7 @@ class ApiService {
                       data['moistureStatus'] ?? _getMoistureStatus(moisture),
                   'timestamp':
                       data['timestamp'] ?? DateTime.now().toIso8601String(),
+                  'isConnected': true, // Add flag to indicate sensors are connected
                 };
               }
             }
@@ -84,6 +86,7 @@ class ApiService {
       'humidity': 0,
       'moistureStatus': 'NO_DATA',
       'timestamp': DateTime.now().toIso8601String(),
+      'isConnected': false, // Add flag to indicate sensors are not connected
     };
   }
 
@@ -168,6 +171,23 @@ class ApiService {
       debugPrint('Error generating report: $e');
       throw Exception('Unable to generate report: ${e.toString()}');
     }
+  }
+
+  Uri generateReportUrl(
+    String plantId,
+    DateTime startDate,
+    DateTime endDate,
+    BuildContext context,
+  ) {
+    return Uri.parse('$baseUrl/reports').replace(queryParameters: {
+      'plantId': plantId,
+      'start': startDate.toIso8601String(),
+      'end': endDate.toIso8601String(),
+      'format': 'pdf',
+      'style': json.encode(ReportConfig.getStyle(context)),
+      'username': defaultPlantName,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
   }
 
   List<Map<String, dynamic>> _generateAlerts(List<dynamic> readings) {

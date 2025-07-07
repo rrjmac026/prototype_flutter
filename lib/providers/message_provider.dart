@@ -32,6 +32,36 @@ class MessageProvider with ChangeNotifier {
           await _apiService.getLatestSensorData(ApiService.defaultPlantId);
       _latestSensorData = freshData;
 
+      // Check if sensors are connected before generating warnings
+      final isConnected = freshData['isConnected'] ?? false;
+      
+      if (!isConnected) {
+        // Use a consistent ID for disconnection messages to prevent duplicates
+        final disconnectionMessage = Message(
+            id: 'sensors_disconnected',  // Fixed ID for disconnection messages
+            title: '📡 Sensors Disconnected',
+            content: 'Your plant monitoring sensors appear to be offline.\n\n' +
+                'Recommended Actions:\n' +
+                '• Check sensor power\n' +
+                '• Verify WiFi connection\n' +
+                '• Restart the device if needed',
+            timestamp: DateTime.now(),
+            type: MessageType.info,
+            priority: MessagePriority.normal);
+        
+        // Remove any existing disconnection messages first
+        _messages.removeWhere((m) => m.id == 'sensors_disconnected');
+        
+        // Add the new disconnection message
+        _messages.insert(0, disconnectionMessage);
+        _messageController.add(_messages);
+        notifyListeners();
+        return;
+      }
+      
+      // Remove any disconnection messages when sensors are connected
+      _messages.removeWhere((m) => m.id == 'sensors_disconnected');
+
       final moisture = freshData['moisture'] as double;
       final temp = freshData['temperature'] as double;
       final humidity = freshData['humidity'] as double;
@@ -90,14 +120,22 @@ class MessageProvider with ChangeNotifier {
   }
 
   void _addWarning(String title, String content, MessageType type) {
+    // Generate a more stable ID based on the title to prevent duplicates of the same type
+    final stableId = '${title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase()}_${type.toString()}';
+    
     final message = Message(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: stableId,
         title: title,
         content: content,
         timestamp: DateTime.now(),
         type: type,
         priority: _getPriorityForMessage(type));
-    addMessage(message);
+    
+    // Remove any existing message with the same ID before adding the new one
+    _messages.removeWhere((m) => m.id == stableId);
+    _messages.insert(0, message);
+    _messageController.add(_messages);
+    notifyListeners();
   }
 
   MessagePriority _getPriorityForMessage(MessageType type) {
@@ -129,15 +167,23 @@ class MessageProvider with ChangeNotifier {
 
   void _addSystemAlert(String title, String content, MessageType type,
       MessagePriority priority) {
+    // Generate a stable ID based on the title and type
+    final stableId = '${title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase()}_${type.toString()}';
+    
     final message = Message(
-      id: '${DateTime.now().millisecondsSinceEpoch}_${type.toString()}',
+      id: stableId,
       title: title,
       content: content,
       timestamp: DateTime.now(),
       type: type,
       priority: priority,
     );
-    addMessage(message);
+    
+    // Remove any existing message with the same ID before adding the new one
+    _messages.removeWhere((m) => m.id == stableId);
+    _messages.insert(0, message);
+    _messageController.add(_messages);
+    notifyListeners();
   }
 
   bool _shouldAddStatusUpdate() {
@@ -162,13 +208,21 @@ class MessageProvider with ChangeNotifier {
     return 'IN WATER';
   }
 
+  // This method is kept for backward compatibility but is no longer used for system messages
   void addMessage(Message message) {
-    // Only add if message doesn't exist
-    if (!_messages.any((m) => m.id == message.id)) {
+    // Check if a message with this ID already exists
+    final existingIndex = _messages.indexWhere((m) => m.id == message.id);
+    
+    if (existingIndex >= 0) {
+      // Replace the existing message
+      _messages[existingIndex] = message;
+    } else {
+      // Add as a new message
       _messages.insert(0, message);
-      _messageController.add(_messages);
-      notifyListeners();
     }
+    
+    _messageController.add(_messages);
+    notifyListeners();
   }
 
   Future<void> initializeMessages() async {

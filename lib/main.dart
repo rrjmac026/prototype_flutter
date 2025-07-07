@@ -7,6 +7,7 @@ import 'package:prototype/providers/plant_data_provider.dart';
 import 'package:prototype/providers/settings_provider.dart';
 import 'package:prototype/providers/user_provider.dart';
 import 'package:prototype/providers/message_provider.dart';
+import 'package:prototype/providers/schedule_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,9 @@ void main() {
         ),
         ChangeNotifierProvider<MessageProvider>(
           create: (_) => MessageProvider(),
+        ),
+        ChangeNotifierProvider<ScheduleProvider>(
+          create: (_) => ScheduleProvider(),
         ),
       ],
       child: const MyApp(),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:prototype/screens/dashboard_screen.dart';
 import 'package:prototype/screens/profile_screen.dart';
 import 'package:prototype/screens/messages_screen.dart';
+import 'package:prototype/screens/schedule_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,6 +17,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _screens = [
     const DashboardScreen(),
     const MessagesScreen(),
+    const ScheduleScreen(),
     const ProfileScreen(),
   ];
 
@@ -38,6 +40,10 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.message),
             label: 'Messages',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.schedule),
+            label: 'Schedule',
           ),
           NavigationDestination(
             icon: Icon(Icons.person),
