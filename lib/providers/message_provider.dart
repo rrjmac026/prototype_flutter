@@ -65,51 +65,58 @@ class MessageProvider with ChangeNotifier {
       final moisture = freshData['moisture'] as double;
       final temp = freshData['temperature'] as double;
       final humidity = freshData['humidity'] as double;
-      final status = freshData['moistureStatus'] as String;
+      final status = _getMoistureStatus(moisture); // Use our corrected status function
 
-      // Smart Moisture Warnings with actual readings
-      if (moisture >= 1000) {
+      // Fixed Smart Moisture Warnings - corrected logic for percentage-based readings
+      if (moisture <= 5) {
         _addWarning(
-            '🚫 Sensor Reading Error',
-            'Current Reading: ${moisture.toStringAsFixed(0)}\n' +
+            '🌵 Critical: Extremely Dry Soil',
+            'Current Reading: ${moisture.toStringAsFixed(1)}%\n' +
                 'Status: $status\n\n' +
                 'Environmental Conditions:\n' +
-                '• Temperature: ${temp.toStringAsFixed(2)}°C\n' +
-                '• Humidity: ${humidity.toStringAsFixed(2)}%\n\n' +
-                'Recommended Actions:\n' +
-                '• Check sensor placement\n' +
-                '• Verify connections\n' +
-                '• Ensure proper soil contact',
+                '• Temperature: ${temp.toStringAsFixed(1)}°C\n' +
+                '• Humidity: ${humidity.toStringAsFixed(1)}%\n\n' +
+                'Action Required: Water your plant immediately!',
             MessageType.critical);
-      } else if (moisture > 600) {
+      } else if (moisture <= 20) {
         _addWarning(
-            '🌵 Critical: Low Moisture',
-            'Current Reading: ${moisture.toStringAsFixed(0)}\n' +
+            '🌿 Warning: Low Moisture',
+            'Current Reading: ${moisture.toStringAsFixed(1)}%\n' +
                 'Status: $status\n\n' +
                 'Environmental Conditions:\n' +
-                '• Temperature: ${temp.toStringAsFixed(2)}°C\n' +
-                '• Humidity: ${humidity.toStringAsFixed(2)}%\n\n' +
-                'Action Required: Water your plant soon',
+                '• Temperature: ${temp.toStringAsFixed(1)}°C\n' +
+                '• Humidity: ${humidity.toStringAsFixed(1)}%\n\n' +
+                'Action Required: Consider watering your plant soon',
             MessageType.warning);
-      } else if (moisture >= 370) {
+      } else if (moisture <= 60) {
         _addWarning(
-            '🌿 Moisture Level Normal',
-            'Current Reading: ${moisture.toStringAsFixed(0)}\n' +
+            '✅ Moisture Level Normal',
+            'Current Reading: ${moisture.toStringAsFixed(1)}%\n' +
                 'Status: $status\n\n' +
                 'Environmental Conditions:\n' +
-                '• Temperature: ${temp.toStringAsFixed(2)}°C\n' +
-                '• Humidity: ${humidity.toStringAsFixed(2)}%\n\n' +
-                'System is monitoring normally',
+                '• Temperature: ${temp.toStringAsFixed(1)}°C\n' +
+                '• Humidity: ${humidity.toStringAsFixed(1)}%\n\n' +
+                'Your plant is in optimal condition',
+            MessageType.info);
+      } else if (moisture <= 80) {
+        _addWarning(
+            '💧 High Moisture Level',
+            'Current Reading: ${moisture.toStringAsFixed(1)}%\n' +
+                'Status: $status\n\n' +
+                'Environmental Conditions:\n' +
+                '• Temperature: ${temp.toStringAsFixed(1)}°C\n' +
+                '• Humidity: ${humidity.toStringAsFixed(1)}%\n\n' +
+                'Monitor: Soil moisture is high but acceptable',
             MessageType.info);
       } else {
         _addWarning(
-            '💧 High Moisture Alert',
-            'Current Reading: ${moisture.toStringAsFixed(0)}\n' +
+            '🚨 Warning: Oversaturated Soil',
+            'Current Reading: ${moisture.toStringAsFixed(1)}%\n' +
                 'Status: $status\n\n' +
                 'Environmental Conditions:\n' +
-                '• Temperature: ${temp.toStringAsFixed(2)}°C\n' +
-                '• Humidity: ${humidity.toStringAsFixed(2)}%\n\n' +
-                'Warning: Soil is overly saturated',
+                '• Temperature: ${temp.toStringAsFixed(1)}°C\n' +
+                '• Humidity: ${humidity.toStringAsFixed(1)}%\n\n' +
+                'Warning: Soil may be too wet - check drainage',
             MessageType.warning);
       }
 
@@ -150,8 +157,10 @@ class MessageProvider with ChangeNotifier {
   }
 
   MessagePriority _getPriorityForMoisture(num value) {
-    if (value >= 1000) return MessagePriority.critical;
-    if (value > 600) return MessagePriority.warning;
+    // Fixed priority logic for percentage-based moisture readings
+    if (value <= 5) return MessagePriority.critical;  // Extremely dry
+    if (value <= 20) return MessagePriority.warning;  // Low moisture
+    if (value >= 80) return MessagePriority.warning;  // Too wet
     return MessagePriority.normal;
   }
 
@@ -201,11 +210,14 @@ class MessageProvider with ChangeNotifier {
         const Duration(hours: 6);
   }
 
+  // Fixed moisture status function for percentage-based readings
   String _getMoistureStatus(num value) {
-    if (value >= 1000) return 'SENSOR ERROR';
-    if (value > 600) return 'DRY SOIL';
-    if (value >= 370) return 'HUMID SOIL';
-    return 'IN WATER';
+    if (value <= 5) return 'EXTREMELY DRY';
+    if (value <= 20) return 'DRY SOIL';
+    if (value <= 40) return 'SLIGHTLY DRY';
+    if (value <= 60) return 'OPTIMAL';
+    if (value <= 80) return 'MOIST';
+    return 'OVERSATURATED';
   }
 
   // This method is kept for backward compatibility but is no longer used for system messages
