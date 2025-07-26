@@ -5,17 +5,41 @@ import 'package:prototype/providers/settings_provider.dart'; // Add this import
 import 'package:prototype/models/plant_data.dart';
 import 'package:prototype/providers/user_provider.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'dart:async';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Initialize the provider
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PlantDataProvider>().init();
+      // Start auto-refresh timer
+      _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (mounted) {
+          context.read<PlantDataProvider>().refreshData();
+        }
+      });
     });
+  }
 
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
 
     return Scaffold(
@@ -42,26 +66,20 @@ class DashboardScreen extends StatelessWidget {
             );
           }
 
-          // Wrap content in StreamBuilder for real-time updates
-          return StreamBuilder(
-            stream: Stream.periodic(const Duration(seconds: 2)),
-            builder: (context, snapshot) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildGreetingCard(),
-                    const SizedBox(height: 16),
-                    _buildMonitoringGrid(provider.latestData),
-                    const SizedBox(height: 16),
-                    _buildSensorChart(provider.latestData!),
-                    const SizedBox(height: 16),
-                    _buildWateringSchedule(),
-                  ],
-                ),
-              );
-            },
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildGreetingCard(),
+                const SizedBox(height: 16),
+                _buildMonitoringGrid(provider.latestData),
+                const SizedBox(height: 16),
+                _buildSensorChart(provider.latestData!),
+                const SizedBox(height: 16),
+                _buildWateringSchedule(),
+              ],
+            ),
           );
         },
       ),
@@ -80,36 +98,37 @@ class DashboardScreen extends StatelessWidget {
           ),
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(Icons.wb_sunny, color: Colors.yellow.shade300, size: 32),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Consumer<UserProvider>(
-                      builder: (context, userProvider, child) => Text(
-                        'Good Morning, ${userProvider.username}!',
+            Icon(Icons.wb_sunny, color: Colors.yellow.shade300, size: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Consumer<UserProvider>(
+                    builder: (context, userProvider, child) {
+                      final username = userProvider.username ?? 'User';
+                      return Text(
+                        'Good Morning, $username!',
                         style: const TextStyle(
-                          fontSize: 24,
+                          fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
-                      ),
+                        softWrap: true,
+                      );
+                    },
+                  ),
+                  const Text(
+                    'Your garden is doing well today.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white70,
                     ),
-                    const Text(
-                      'Your garden is doing well today.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -145,11 +164,16 @@ class DashboardScreen extends StatelessWidget {
                   data != null ? '${data.humidity.toStringAsFixed(1)}%' : 'N/A',
               color: Colors.green,
             ),
+            // Update this section to use the same moisture status logic
             _buildMonitoringCard(
-              icon: Icons.warning_rounded, // Changed from wb_sunny
+              icon: Icons.warning_rounded,
               title: 'Status',
-              value: data?.moistureStatus ?? 'NO_DATA',
-              color: _getStatusColor(data?.moistureStatus), // Add status color
+              value: data != null
+                  ? _getMoistureStatus(data.soilMoisture)
+                  : 'NO_DATA',
+              color: data != null
+                  ? _getMoistureColor(data.soilMoisture)
+                  : Colors.grey,
             ),
           ],
         );
@@ -215,13 +239,15 @@ class DashboardScreen extends StatelessWidget {
   }
 
   Widget _buildMoistureCard(Map<String, dynamic>? data) {
-    final moistureValue = data?['moisture'] ?? 0;
-    final String status = _getMoistureStatus(moistureValue);
-    final Color statusColor = _getMoistureColor(moistureValue);
+    final rawMoisture = data?['moisture'] ?? 0;
+    // Use the raw moisture value directly as it's already a percentage from ESP32
+    final moisturePercentage = rawMoisture.toDouble();
+    final String status = _getMoistureStatus(moisturePercentage);
+    final Color statusColor = _getMoistureColor(moisturePercentage);
 
     return _buildSensorCard(
       'Soil Moisture',
-      moistureValue.toStringAsFixed(0),
+      '${moisturePercentage.toStringAsFixed(1)}%',
       status,
       statusColor,
       Icons.water_drop,
@@ -229,17 +255,18 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
+  // Update the moisture status logic to be consistent
   String _getMoistureStatus(num value) {
     if (value >= 1000) return 'SENSOR ERROR';
-    if (value > 600) return 'DRY SOIL';
-    if (value >= 370) return 'HUMID SOIL';
-    return 'IN WATER';
+    if (value < 30) return 'DRY';
+    if (value < 70) return 'HUMID';
+    return 'WET';
   }
 
   Color _getMoistureColor(num value) {
     if (value >= 1000) return Colors.red;
-    if (value > 600) return Colors.orange;
-    if (value >= 370) return Colors.blue;
+    if (value < 30) return Colors.orange;
+    if (value < 70) return Colors.blue;
     return Colors.green;
   }
 
@@ -278,28 +305,37 @@ class DashboardScreen extends StatelessWidget {
   }
 
   Widget _buildSensorChart(PlantData data) {
+    final moisturePercentage = data.soilMoisture;
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding:
+            const EdgeInsets.fromLTRB(8, 16, 16, 8), // Adjusted right padding
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Sensor Readings',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Text('Sensor Readings',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildLegendItem('Moisture (0-1023)', Colors.blue),
-                const SizedBox(width: 16),
-                _buildLegendItem('Humidity (%)', Colors.green),
-                const SizedBox(width: 16),
-                _buildLegendItem('Temperature (°C)', Colors.orange),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildLegendItem('Moisture (%)', Colors.blue),
+                  const SizedBox(width: 16),
+                  _buildLegendItem('Humidity (%)', Colors.green),
+                  const SizedBox(width: 16),
+                  _buildLegendItem('Temperature (°C)', Colors.orange),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             SizedBox(
-              height: 200,
+              height: 180,
               child: LineChart(
                 LineChartData(
                   gridData: const FlGridData(show: true),
@@ -314,16 +350,20 @@ class DashboardScreen extends StatelessWidget {
                       axisNameWidget: const Text('Value'),
                       sideTitles: SideTitles(
                         showTitles: true,
+                        reservedSize: 32, // Increased reserved size
                         getTitlesWidget: (value, meta) {
-                          return Text(
-                            value.toInt().toString(),
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 10,
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Text(
+                              value.toInt().toString(),
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 9,
+                              ),
                             ),
                           );
                         },
-                        interval: 200, // Adjust interval for better readability
+                        interval: 20,
                       ),
                     ),
                     bottomTitles: const AxisTitles(
@@ -332,9 +372,9 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   borderData: FlBorderData(show: true),
                   lineBarsData: [
-                    // Moisture line (raw values 0-1023)
+                    // Moisture line (percentage from server)
                     LineChartBarData(
-                      spots: [FlSpot(0, data.soilMoisture)],
+                      spots: [FlSpot(0, moisturePercentage)],
                       isCurved: true,
                       color: Colors.blue,
                       dotData: const FlDotData(show: true),
@@ -359,7 +399,8 @@ class DashboardScreen extends StatelessWidget {
                     ),
                   ],
                   minY: 0,
-                  maxY: 1023, // Set max Y to accommodate moisture sensor range
+                  maxY: 100,
+                  // Remove margin property
                 ),
               ),
             ),
@@ -403,7 +444,7 @@ class DashboardScreen extends StatelessWidget {
     return Card(
       elevation: 1,
       child: Container(
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(4), // Reduced padding
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(6),
           gradient: LinearGradient(
@@ -414,8 +455,9 @@ class DashboardScreen extends StatelessWidget {
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min, // Added to prevent overflow
           children: [
-            Icon(icon, size: 24, color: Colors.white),
+            Icon(icon, size: 20, color: Colors.white), // Reduced icon size
             const SizedBox(height: 2),
             Text(
               title,
@@ -427,25 +469,30 @@ class DashboardScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 1),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            FittedBox(
+              // Added FittedBox to prevent text overflow
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
             ),
             const SizedBox(height: 2),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 6, vertical: 1), // Reduced padding
               decoration: BoxDecoration(
                 color: statusColor.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 status,
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 9, // Reduced font size
                   color: statusColor,
                   fontWeight: FontWeight.bold,
                 ),
