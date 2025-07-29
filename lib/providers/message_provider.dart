@@ -9,6 +9,8 @@ class MessageProvider with ChangeNotifier {
   final _messageController = StreamController<List<Message>>.broadcast();
   Timer? _refreshTimer;
   Map<String, dynamic>? _latestSensorData;
+  final Map<String, DateTime> _lastMessageTimestamps =
+      {}; // Track last message times
 
   Stream<List<Message>> get messageStream => _messageController.stream;
   List<Message> get messages => List.from(_messages);
@@ -34,11 +36,11 @@ class MessageProvider with ChangeNotifier {
 
       // Check if sensors are connected before generating warnings
       final isConnected = freshData['isConnected'] ?? false;
-      
+
       if (!isConnected) {
         // Use a consistent ID for disconnection messages to prevent duplicates
         final disconnectionMessage = Message(
-            id: 'sensors_disconnected',  // Fixed ID for disconnection messages
+            id: 'sensors_disconnected', // Fixed ID for disconnection messages
             title: '📡 Sensors Disconnected',
             content: 'Your plant monitoring sensors appear to be offline.\n\n' +
                 'Recommended Actions:\n' +
@@ -48,24 +50,25 @@ class MessageProvider with ChangeNotifier {
             timestamp: DateTime.now(),
             type: MessageType.info,
             priority: MessagePriority.normal);
-        
+
         // Remove any existing disconnection messages first
         _messages.removeWhere((m) => m.id == 'sensors_disconnected');
-        
+
         // Add the new disconnection message
         _messages.insert(0, disconnectionMessage);
         _messageController.add(_messages);
         notifyListeners();
         return;
       }
-      
+
       // Remove any disconnection messages when sensors are connected
       _messages.removeWhere((m) => m.id == 'sensors_disconnected');
 
       final moisture = freshData['moisture'] as double;
       final temp = freshData['temperature'] as double;
       final humidity = freshData['humidity'] as double;
-      final status = _getMoistureStatus(moisture); // Use our corrected status function
+      final status =
+          _getMoistureStatus(moisture); // Use our corrected status function
 
       // Fixed Smart Moisture Warnings - corrected logic for percentage-based readings
       if (moisture <= 5) {
@@ -128,8 +131,9 @@ class MessageProvider with ChangeNotifier {
 
   void _addWarning(String title, String content, MessageType type) {
     // Generate a more stable ID based on the title to prevent duplicates of the same type
-    final stableId = '${title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase()}_${type.toString()}';
-    
+    final stableId =
+        '${title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase()}_${type.toString()}';
+
     final message = Message(
         id: stableId,
         title: title,
@@ -137,7 +141,7 @@ class MessageProvider with ChangeNotifier {
         timestamp: DateTime.now(),
         type: type,
         priority: _getPriorityForMessage(type));
-    
+
     // Remove any existing message with the same ID before adding the new one
     _messages.removeWhere((m) => m.id == stableId);
     _messages.insert(0, message);
@@ -158,9 +162,9 @@ class MessageProvider with ChangeNotifier {
 
   MessagePriority _getPriorityForMoisture(num value) {
     // Fixed priority logic for percentage-based moisture readings
-    if (value <= 5) return MessagePriority.critical;  // Extremely dry
-    if (value <= 20) return MessagePriority.warning;  // Low moisture
-    if (value >= 80) return MessagePriority.warning;  // Too wet
+    if (value <= 5) return MessagePriority.critical; // Extremely dry
+    if (value <= 20) return MessagePriority.warning; // Low moisture
+    if (value >= 80) return MessagePriority.warning; // Too wet
     return MessagePriority.normal;
   }
 
@@ -177,8 +181,9 @@ class MessageProvider with ChangeNotifier {
   void _addSystemAlert(String title, String content, MessageType type,
       MessagePriority priority) {
     // Generate a stable ID based on the title and type
-    final stableId = '${title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase()}_${type.toString()}';
-    
+    final stableId =
+        '${title.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase()}_${type.toString()}';
+
     final message = Message(
       id: stableId,
       title: title,
@@ -187,7 +192,7 @@ class MessageProvider with ChangeNotifier {
       type: type,
       priority: priority,
     );
-    
+
     // Remove any existing message with the same ID before adding the new one
     _messages.removeWhere((m) => m.id == stableId);
     _messages.insert(0, message);
@@ -220,24 +225,37 @@ class MessageProvider with ChangeNotifier {
     return 'OVERSATURATED';
   }
 
-  // This method is kept for backward compatibility but is no longer used for system messages
   void addMessage(Message message) {
-    // Check if a message with this ID already exists
-    final existingIndex = _messages.indexWhere((m) => m.id == message.id);
-    
-    if (existingIndex >= 0) {
-      // Replace the existing message
-      _messages[existingIndex] = message;
-    } else {
-      // Add as a new message
-      _messages.insert(0, message);
+    final messageKey = '${message.type}_${message.title}'; // Create unique key
+    final now = DateTime.now();
+
+    // Check if similar message exists and if enough time has passed (30 minutes)
+    if (_lastMessageTimestamps.containsKey(messageKey)) {
+      final lastTime = _lastMessageTimestamps[messageKey]!;
+      if (now.difference(lastTime).inMinutes < 30) {
+        return; // Skip if similar message was sent less than 30 minutes ago
+      }
     }
-    
-    _messageController.add(_messages);
+
+    // Update timestamp and add message
+    _lastMessageTimestamps[messageKey] = now;
+    _messages.insert(0, message);
+
+    // Keep only last 50 messages
+    if (_messages.length > 50) {
+      _messages.removeLast();
+    }
+
     notifyListeners();
   }
 
-  Future<void> initializeMessages() async {
+  void clearMessages() {
+    _messages.clear();
+    _lastMessageTimestamps.clear();
+    notifyListeners();
+  }
+
+  void initializeMessages() {
     _addSystemAlert(
         'System Started',
         'Plant monitoring system is active and collecting data.',
