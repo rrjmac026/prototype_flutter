@@ -11,9 +11,11 @@ class PlantDataProvider with ChangeNotifier {
   List<PlantData> _historicalReadings = [];
   bool _isInitialized = false;
   Timer? _updateTimer;
+  final _dataController = StreamController<PlantData?>.broadcast();
 
   static const String _storageKey = 'historical_readings';
 
+  Stream<PlantData?> get dataStream => _dataController.stream;
   bool get isInitialized => _isInitialized;
   PlantData? get latestData => _latestData;
   List<PlantData> get historicalReadings => _historicalReadings;
@@ -81,6 +83,7 @@ class PlantDataProvider with ChangeNotifier {
           _historicalReadings.removeLast();
         }
         await _saveReadings(); // Save after updating readings
+        _dataController.add(_latestData); // Add to stream controller
       }
       notifyListeners();
     } catch (e) {
@@ -88,9 +91,18 @@ class PlantDataProvider with ChangeNotifier {
     }
   }
 
+  void updateData(PlantData? newData) {
+    if (newData != _latestData) {
+      _latestData = newData;
+      _dataController.add(newData);
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _updateTimer?.cancel();
+    _dataController.close();
     super.dispose();
   }
 }

@@ -16,17 +16,27 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _refreshTimer;
+  late StreamSubscription<PlantData?> _dataSubscription;
 
   @override
   void initState() {
     super.initState();
     // Initialize data
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PlantDataProvider>().init();
-      // Start auto-refresh timer
-      _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      final provider = context.read<PlantDataProvider>();
+      provider.init();
+
+      // Set up real-time data subscription
+      _dataSubscription = provider.dataStream.listen((data) {
         if (mounted) {
-          context.read<PlantDataProvider>().refreshData();
+          provider.updateData(data);
+        }
+      });
+
+      // Shorter refresh interval for more responsive updates
+      _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) {
+          provider.refreshData();
         }
       });
     });
@@ -35,6 +45,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _dataSubscription.cancel();
     super.dispose();
   }
 
