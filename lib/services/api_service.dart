@@ -45,15 +45,22 @@ class ApiService {
               final data = json.decode(response.body);
               if (data != null) {
                 final moisture = _parseDoubleValue(data['moisture']);
+                final temperature = _parseDoubleValue(data['temperature']);
+                final humidity = _parseDoubleValue(data['humidity']);
+
+                // Consider sensors connected if we have valid data
+                final bool isConnected =
+                    moisture > 0 && temperature > 0 && humidity > 0;
+
                 return {
                   'moisture': moisture,
-                  'temperature': _parseDoubleValue(data['temperature']),
-                  'humidity': _parseDoubleValue(data['humidity']),
+                  'temperature': temperature,
+                  'humidity': humidity,
                   'moistureStatus':
                       data['moistureStatus'] ?? _getMoistureStatus(moisture),
                   'timestamp':
                       data['timestamp'] ?? DateTime.now().toIso8601String(),
-                  'isConnected': true, // Add flag to indicate sensors are connected
+                  'isConnected': isConnected,
                 };
               }
             }

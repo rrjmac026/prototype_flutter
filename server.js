@@ -44,6 +44,12 @@ async function saveSensorData(data) {
   return docRef;
 }
 
+function isSensorDataStale(timestamp) {
+  const now = moment();
+  const readingTime = moment(timestamp);
+  return now.diff(readingTime, 'seconds') > 45;  // Changed to 45 seconds (30s interval + 15s buffer)
+}
+
 async function getLatestReading(plantId) {
   const snapshot = await db.collection("sensor_data")
     .where("plantId", "==", plantId)
@@ -51,12 +57,30 @@ async function getLatestReading(plantId) {
     .limit(1)
     .get();
   
-  return snapshot.empty ? null : snapshot.docs[0].data();
+  if (snapshot.empty) return null;
+  
+  const data = snapshot.docs[0].data();
+  const isStale = isSensorDataStale(data.timestamp.toDate());
+  
+  // Only consider data valid if it's not stale and explicitly marked as connected
+  const isConnected = !isStale && data.isConnected === true;
+  
+  return {
+    ...data,
+    timestamp: data.timestamp,
+    isConnected,
+    isOnline: isConnected,
+    moisture: isConnected ? data.moisture : 0,
+    temperature: isConnected ? data.temperature : 0,
+    humidity: isConnected ? data.humidity : 0,
+    moistureStatus: !isConnected ? "OFFLINE" : getMoistureStatus(data.moisture)
+  };
 }
 
 // Function to determine moisture status
 function getMoistureStatus(moisture) {
-  if (moisture === 1023) return "NO DATA";
+  if (!moisture || moisture === null) return "NO DATA";
+  if (moisture === 1023) return "SENSOR ERROR";
   if (moisture >= 1000) return "SENSOR ERROR";
   if (moisture > 600 && moisture < 1000) return "DRY";
   if (moisture > 370 && moisture <= 600) return "HUMID";
@@ -151,7 +175,8 @@ app.post("/api/sensor-data", async (req, res) => {
       return res.status(400).json({ error: "Incomplete sensor data" });
     }
 
-    // Determine moisture status
+    // Add explicit connection state from ESP32
+    data.isConnected = true;  // ESP32 only sends data when connected
     data.moistureStatus = getMoistureStatus(data.moisture);
 
     // Save to Firestore
@@ -178,19 +203,24 @@ app.get("/api/sensor-data", async (req, res) => {
     if (!latestReading) {
       return res.status(404).json({
         error: 'No sensor data found',
-        moisture: 0, 
-        temperature: 0, 
-        humidity: 0, 
-        moistureStatus: "NO_DATA" 
+        moisture: 0,
+        temperature: 0,
+        humidity: 0,
+        moistureStatus: "OFFLINE",
+        isOnline: false,
+        isConnected: false,
+        timestamp: null
       });
     }
 
     const response = {
-      moisture: latestReading.moisture || 0,
-      temperature: latestReading.temperature || 0,
-      humidity: latestReading.humidity || 0,
-      moistureStatus: latestReading.moistureStatus || "NO_DATA",
-      timestamp: moment(latestReading.timestamp).tz('Asia/Manila').format()
+      moisture: latestReading.isConnected ? latestReading.moisture : 0,
+      temperature: latestReading.isConnected ? latestReading.temperature : 0,
+      humidity: latestReading.isConnected ? latestReading.humidity : 0,
+      moistureStatus: latestReading.moistureStatus,
+      timestamp: moment(latestReading.timestamp.toDate()).tz('Asia/Manila').format(),
+      isOnline: latestReading.isConnected,
+      isConnected: latestReading.isConnected
     };
 
     res.json(response);

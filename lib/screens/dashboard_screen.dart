@@ -137,43 +137,95 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildMonitoringGrid(PlantData? data) {
+    final bool isOnline = data?.isOnline ?? false;
     return Consumer<SettingsProvider>(
       builder: (context, settings, child) {
-        return GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 6, // Reduced from 8
-          crossAxisSpacing: 6, // Reduced from 8
-          childAspectRatio: 1.6, // Increased from 1.4 to make cards shorter
-          padding: const EdgeInsets.symmetric(horizontal: 2), // Reduced padding
+        return Column(
           children: [
-            _buildMoistureCard(data?.toMap()),
-            _buildMonitoringCard(
-              icon: Icons.thermostat,
-              title: settings.getLocalizedText('Temperature'),
-              value: data != null
-                  ? settings.formatTemperature(data.temperature)
-                  : 'N/A',
-              color: Colors.orange,
-            ),
-            _buildMonitoringCard(
-              icon: Icons.water,
-              title: 'Humidity',
-              value:
-                  data != null ? '${data.humidity.toStringAsFixed(1)}%' : 'N/A',
-              color: Colors.green,
-            ),
-            // Update this section to use the same moisture status logic
-            _buildMonitoringCard(
-              icon: Icons.warning_rounded,
-              title: 'Status',
-              value: data != null
-                  ? _getMoistureStatus(data.soilMoisture)
-                  : 'NO_DATA',
-              color: data != null
-                  ? _getMoistureColor(data.soilMoisture)
-                  : Colors.grey,
+            if (!isOnline)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade300),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Sensors Offline',
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Check sensor connections',
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 6, // Reduced from 8
+              crossAxisSpacing: 6, // Reduced from 8
+              childAspectRatio: 1.6, // Increased from 1.4 to make cards shorter
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 2), // Reduced padding
+              children: [
+                _buildMonitoringCard(
+                  icon: Icons.water_drop,
+                  title: 'Soil Moisture',
+                  value: isOnline
+                      ? '${data?.soilMoisture.toStringAsFixed(1)}%'
+                      : 'N/A',
+                  color: isOnline
+                      ? _getMoistureColor(data?.soilMoisture ?? 0)
+                      : Colors.grey,
+                ),
+                _buildMonitoringCard(
+                  icon: Icons.thermostat,
+                  title: settings.getLocalizedText('Temperature'),
+                  value: data != null
+                      ? settings.formatTemperature(data.temperature)
+                      : 'N/A',
+                  color: Colors.orange,
+                ),
+                _buildMonitoringCard(
+                  icon: Icons.water,
+                  title: 'Humidity',
+                  value: data != null
+                      ? '${data.humidity.toStringAsFixed(1)}%'
+                      : 'N/A',
+                  color: Colors.green,
+                ),
+                // Update this section to use the same moisture status logic
+                _buildMonitoringCard(
+                  icon: Icons.warning_rounded,
+                  title: 'Status',
+                  value: data != null
+                      ? _getMoistureStatus(data.soilMoisture)
+                      : 'NO_DATA',
+                  color: data != null
+                      ? _getMoistureColor(data.soilMoisture)
+                      : Colors.grey,
+                ),
+              ],
             ),
           ],
         );
@@ -256,18 +308,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Update the moisture status logic to be consistent
-  String _getMoistureStatus(num value) {
-    if (value >= 1000) return 'SENSOR ERROR';
-    if (value < 30) return 'DRY';
-    if (value < 70) return 'HUMID';
-    return 'WET';
+  String _getMoistureStatus(num percent) {
+    if (percent <= 0) return 'SENSOR ERROR'; // Sensor disconnected or faulty
+    if (percent < 40) return 'DRY'; // Needs watering
+    if (percent < 70) return 'HUMID'; // Moist soil
+    return 'WET'; // Fully wet or in water
   }
 
-  Color _getMoistureColor(num value) {
-    if (value >= 1000) return Colors.red;
-    if (value < 30) return Colors.orange;
-    if (value < 70) return Colors.blue;
-    return Colors.green;
+  Color _getMoistureColor(num percent) {
+    if (percent <= 0) return Colors.red; // Sensor error
+    if (percent < 40) return Colors.orange; // Dry
+    if (percent < 70) return Colors.blue; // Humid
+    return Colors.green; // Wet
   }
 
   Widget _buildWateringSchedule() {
@@ -305,6 +357,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildSensorChart(PlantData data) {
+    if (!data.isOnline) {
+      return Card(
+        child: SizedBox(
+          height: 250,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.signal_wifi_off,
+                    size: 48, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  'Sensors Offline',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final moisturePercentage = data.soilMoisture;
 
     return Card(
@@ -433,74 +511,93 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildSensorCard(
-    String title,
-    String value,
-    String status,
-    Color statusColor,
-    IconData icon,
-    List<Color> gradientColors,
-  ) {
-    return Card(
-      elevation: 1,
-      child: Container(
-        padding: const EdgeInsets.all(4), // Reduced padding
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          gradient: LinearGradient(
-            colors: gradientColors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+  Widget _buildSensorCard(String title, String value, String status,
+      Color statusColor, IconData icon, List<Color> gradientColors,
+      [PlantData? data] // Add optional PlantData parameter
+      ) {
+    return Stack(
+      children: [
+        Card(
+          elevation: 1,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              gradient: LinearGradient(
+                colors: gradientColors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 20, color: Colors.white),
+                const SizedBox(height: 2),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 1),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    status,
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min, // Added to prevent overflow
-          children: [
-            Icon(icon, size: 20, color: Colors.white), // Reduced icon size
-            const SizedBox(height: 2),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: Colors.white,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 1),
-            FittedBox(
-              // Added FittedBox to prevent text overflow
-              fit: BoxFit.scaleDown,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 6, vertical: 1), // Reduced padding
+        if (data != null &&
+            !data.isOnline) // Check if data exists and is offline
+          Positioned.fill(
+            child: Container(
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.grey.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(6),
               ),
-              child: Text(
-                status,
-                style: TextStyle(
-                  fontSize: 9, // Reduced font size
-                  color: statusColor,
-                  fontWeight: FontWeight.bold,
+              child: const Center(
+                child: Text(
+                  'OFFLINE',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+      ],
     );
   }
 }

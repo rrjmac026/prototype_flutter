@@ -310,14 +310,25 @@ void sendDataToServer(int moisture, bool waterState, float temperature, float hu
         return;
     }
 
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)) {
+        Serial.println("Failed to obtain time");
+        return;
+    }
+
+    char timestamp[25];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S.000Z", &timeinfo);
+
     // Create JSON document
     StaticJsonDocument<200> doc;
     doc["plantId"] = FIXED_PLANT_ID;
-    doc["moisture"] = convertToMoisturePercent(moisture);  // Send percentage instead of raw value
+    doc["moisture"] = convertToMoisturePercent(moisture);
     doc["temperature"] = temperature;
     doc["humidity"] = humidity;
     doc["waterState"] = waterState;
     doc["fertilizerState"] = fertilizerState;
+    doc["timestamp"] = timestamp;
+    doc["isConnected"] = true;  // Add explicit connection state
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -428,10 +439,10 @@ int convertToMoisturePercent(int rawValue) {
 }
 
 String getMoistureStatus(int moisturePercent) {
-    if (moisturePercent <= 5) return "SENSOR ERROR";
-    if (moisturePercent < 40) return "WET";
-    if (moisturePercent < 65) return "HUMID";
-    return "DRY";
+  if (moisturePercent >= 95) return "WET";          // In water
+  if (moisturePercent >= 60) return "HUMID";        // Moist enough
+  if (moisturePercent >= 1) return "DRY";           // Needs water
+  return "SENSOR ERROR";                            // 0% = disconnected or very dry
 }
 
 // Add new constant for watchdog control

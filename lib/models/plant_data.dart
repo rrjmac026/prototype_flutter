@@ -4,6 +4,7 @@ class PlantData {
   final double humidity;
   final String moistureStatus;
   final DateTime timestamp;
+  final bool isOnline;
 
   PlantData({
     required this.soilMoisture, // Changed from moisture to soilMoisture
@@ -11,6 +12,7 @@ class PlantData {
     required this.humidity,
     required this.moistureStatus,
     required this.timestamp,
+    this.isOnline = false, // Add this field
   });
 
   // Getter for backwards compatibility
@@ -20,13 +22,26 @@ class PlantData {
     final moisture = json['moisture'];
     final temp = json['temperature'];
     final hum = json['humidity'];
+    final timestamp = json['timestamp'] != null
+        ? DateTime.parse(json['timestamp'])
+        : DateTime.now();
+
+    // Consider sensors online if we have valid data
+    final bool hasValidData = moisture != null &&
+        moisture != 0 &&
+        temp != null &&
+        temp != 0 &&
+        hum != null &&
+        hum != 0;
 
     return PlantData(
       soilMoisture: _parseDouble(moisture),
       temperature: _parseDouble(temp),
       humidity: _parseDouble(hum),
       moistureStatus: json['moistureStatus'] ?? 'NO_DATA',
-      timestamp: DateTime.now(), // Use current time for simplicity
+      timestamp: timestamp,
+      isOnline: json['isConnected'] ??
+          hasValidData, // Use isConnected from API or check valid data
     );
   }
 
