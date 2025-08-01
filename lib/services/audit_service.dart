@@ -235,11 +235,18 @@ class AuditService {
   // Helper methods for specific activities
   Future<bool> logSensorActivity(
       String action, Map<String, dynamic> sensorData) {
+    // Ensure waterState and fertilizerState are included in the log
+    final enhancedSensorData = {
+      ...sensorData,
+      'waterState': sensorData['waterState'] ?? false,
+      'fertilizerState': sensorData['fertilizerState'] ?? false,
+    };
+
     return logActivity(
       type: 'sensor',
       action: action,
       details: 'Sensor reading recorded',
-      data: sensorData,
+      data: enhancedSensorData,
     );
   }
 
@@ -334,5 +341,24 @@ class AuditService {
       action: action,
       details: details,
     );
+  }
+
+  Stream<List<AuditLog>> getAuditLogsStream({
+    String? plantId,
+    String? type,
+    String? action,
+    String? status,
+    DateTime? startDate,
+    DateTime? endDate,
+    Duration refreshInterval = const Duration(seconds: 5),
+  }) {
+    return Stream.periodic(refreshInterval).asyncMap((_) => getAuditLogs(
+          plantId: plantId,
+          type: type,
+          action: action,
+          status: status,
+          startDate: startDate,
+          endDate: endDate,
+        ));
   }
 }

@@ -57,9 +57,7 @@ class AuditLog {
 
   String getIcon() {
     switch (type.toLowerCase()) {
-      case 'sensor':
-        return '📡';
-      case 'water':
+      case 'watering':
         return '💧';
       case 'fertilizer':
         return '🌱';
@@ -86,12 +84,10 @@ class AuditLog {
 
   String getDisplayTitle() {
     switch (type.toLowerCase()) {
-      case 'sensor':
-        return 'Sensor Reading';
-      case 'water':
+      case 'watering':
         return 'Water System';
       case 'fertilizer':
-        return 'Fertilizer';
+        return 'Fertilizer System';
       case 'schedule':
         return 'Schedule';
       case 'report':
@@ -113,6 +109,50 @@ class AuditLog {
     }
   }
 
+  String getActionDisplay() {
+    final baseAction = action.replaceAll('_', ' ').toUpperCase();
+
+    // Add more context for watering/fertilizer actions
+    if (type.toLowerCase() == 'watering') {
+      switch (action.toLowerCase()) {
+        case 'started':
+          return 'PUMP ACTIVATED';
+        case 'completed':
+          return 'CYCLE COMPLETED';
+        case 'stopped':
+          return 'PUMP STOPPED';
+        default:
+          return baseAction;
+      }
+    }
+
+    if (type.toLowerCase() == 'fertilizer') {
+      switch (action.toLowerCase()) {
+        case 'started':
+          return 'FEEDING STARTED';
+        case 'completed':
+          return 'FEEDING COMPLETED';
+        case 'stopped':
+          return 'FEEDING STOPPED';
+        default:
+          return baseAction;
+      }
+    }
+
+    return baseAction;
+  }
+
+  // Add helper method to get status reason
+  String? getStatusReason() {
+    if (type.toLowerCase() == 'watering' ||
+        type.toLowerCase() == 'fertilizer') {
+      if (details != null && details!.contains('Reason:')) {
+        return details!.split('Reason:').last.trim();
+      }
+    }
+    return null;
+  }
+
   Color getColor() {
     switch (status.toLowerCase()) {
       case 'success':
@@ -124,5 +164,62 @@ class AuditLog {
       default:
         return Colors.grey;
     }
+  }
+
+  String? getSystemDetails() {
+    if (sensorData != null) {
+      List<String> details = [];
+
+      // Add water system status
+      if (sensorData!.containsKey('waterState')) {
+        final isWatering = sensorData!['waterState'];
+        details.add('💧 ${isWatering ? 'WATERING' : 'IDLE'}');
+      }
+
+      // Add fertilizer system status
+      if (sensorData!.containsKey('fertilizerState')) {
+        final isFertilizing = sensorData!['fertilizerState'];
+        details.add('🌱 ${isFertilizing ? 'FEEDING' : 'IDLE'}');
+      }
+
+      // Add moisture info if available
+      if (sensorData!['moisture'] != null && sensorData!['moistureStatus'] != null) {
+        details.add('Soil: ${sensorData!['moistureStatus']} (${sensorData!['moisture']}%)');
+      }
+
+      // Add system health info if available
+      if (sensorData!.containsKey('isConnected')) {
+        final connectionStatus = sensorData!['isConnected'] ? '📡 ONLINE' : '❌ OFFLINE';
+        details.add(connectionStatus);
+      }
+
+      if (details.isNotEmpty) {
+        return details.join(' • ');
+      }
+    }
+    return null;
+  }
+
+  bool get hasSystemActivity {
+    return sensorData != null &&
+        ((sensorData!['waterState'] == true ||
+                sensorData!['fertilizerState'] == true) ||
+            (type.toLowerCase() == 'watering' ||
+                type.toLowerCase() == 'fertilizer'));
+  }
+
+  // Add helper method to get action-specific details
+  String? getActionDetails() {
+    if (type.toLowerCase() == 'watering') {
+      if (sensorData != null && sensorData!['moisture'] != null) {
+        return 'Moisture Level: ${sensorData!['moisture']}% • Status: ${sensorData!['moistureStatus'] ?? 'Unknown'}';
+      }
+    }
+    if (type.toLowerCase() == 'fertilizer') {
+      if (details != null) {
+        return details;
+      }
+    }
+    return null;
   }
 }

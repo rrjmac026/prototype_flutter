@@ -54,8 +54,32 @@ async function saveSensorData(data) {
     const collection = await getCollection('sensor_data');
     const result = await collection.insertOne({
         ...data,
+        // Ensure waterState and fertilizerState are boolean values
+        waterState: Boolean(data.waterState),
+        fertilizerState: Boolean(data.fertilizerState),
         timestamp: moment().tz('Asia/Manila').toDate()
     });
+
+    // Also log this as an audit event
+    const auditCollection = await getCollection('audit_logs');
+    await auditCollection.insertOne({
+        plantId: data.plantId,
+        type: 'sensor',
+        action: 'read',
+        status: 'success',
+        timestamp: moment().tz('Asia/Manila').toDate(),
+        details: 'Sensor reading recorded',
+        sensorData: {
+            moisture: data.moisture,
+            temperature: data.temperature,
+            humidity: data.humidity,
+            moistureStatus: data.moistureStatus,
+            waterState: Boolean(data.waterState),
+            fertilizerState: Boolean(data.fertilizerState),
+            isConnected: data.isConnected
+        }
+    });
+
     return result;
 }
 
@@ -173,16 +197,18 @@ app.post("/api/sensor-data", async (req, res) => {
   try {
     const data = req.body;
 
-    // Optional: Validate incoming data
-    if (!data.plantId || data.moisture == null || data.temperature == null || data.humidity == null) {
+    // Update validation to include states
+    if (!data.plantId || data.moisture == null || data.temperature == null || 
+        data.humidity == null || data.waterState == null || data.fertilizerState == null) {
       return res.status(400).json({ error: "Incomplete sensor data" });
     }
 
     // Add explicit connection state from ESP32
-    data.isConnected = true;  // ESP32 only sends data when connected
+    data.isConnected = true;
     data.moistureStatus = getMoistureStatus(data.moisture);
+    data.waterState = Boolean(data.waterState);
+    data.fertilizerState = Boolean(data.fertilizerState);
 
-    // Save to Firestore
     const result = await saveSensorData(data);
     res.status(201).json({ message: "Sensor data saved", id: result.insertedId });
   } catch (error) {
@@ -210,6 +236,8 @@ app.get("/api/sensor-data", async (req, res) => {
         temperature: 0,
         humidity: 0,
         moistureStatus: "OFFLINE",
+        waterState: false,
+        fertilizerState: false,
         isOnline: false,
         isConnected: false,
         timestamp: null
@@ -221,6 +249,8 @@ app.get("/api/sensor-data", async (req, res) => {
       temperature: latestReading.isConnected ? latestReading.temperature : 0,
       humidity: latestReading.isConnected ? latestReading.humidity : 0,
       moistureStatus: latestReading.moistureStatus,
+      waterState: latestReading.isConnected ? latestReading.waterState : false,
+      fertilizerState: latestReading.isConnected ? latestReading.fertilizerState : false,
       timestamp: moment(latestReading.timestamp.toDate()).tz('Asia/Manila').format(),
       isOnline: latestReading.isConnected,
       isConnected: latestReading.isConnected
@@ -284,6 +314,17 @@ app.get("/api/reports", async (req, res) => {
         example: "/api/reports?plantId=123&start=2024-01-01&end=2024-01-31&format=pdf|json"
       });
     }
+
+    // Create audit log entry for report generation
+    const auditCollection = await getCollection('audit_logs');
+    await auditCollection.insertOne({
+      plantId: plantId,
+      type: 'report',
+      action: 'generate',
+      status: 'success',
+      timestamp: moment().tz('Asia/Manila').toDate(),
+      details: `Generated ${format.toUpperCase()} report from ${start} to ${end}`,
+    });
 
     console.log('Debug - Report Request:', { plantId, start, end, format });
 
@@ -389,10 +430,26 @@ app.get("/api/reports", async (req, res) => {
 
   } catch (error) {
     console.error("❌ Report generation error:", error);
+    
+    // Log failed report generation
+    try {
+      const auditCollection = await getCollection('audit_logs');
+      await auditCollection.insertOne({
+        plantId: req.query.plantId,
+        type: 'report',
+        action: 'generate',
+        status: 'failed',
+        timestamp: moment().tz('Asia/Manila').toDate(),
+        details: `Failed to generate report: ${error.message}`,
+      });
+    } catch (auditError) {
+      console.error("Failed to log report generation error:", auditError);
+    }
+
     res.status(500).json({ 
-        error: "Failed to generate report", 
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: "Failed to generate report", 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -510,10 +567,26 @@ app.get("/api/reports/:plantId", async (req, res) => {
 
   } catch (error) {
     console.error("❌ Report generation error:", error);
+    
+    // Log failed report generation
+    try {
+      const auditCollection = await getCollection('audit_logs');
+      await auditCollection.insertOne({
+        plantId: req.query.plantId,
+        type: 'report',
+        action: 'generate',
+        status: 'failed',
+        timestamp: moment().tz('Asia/Manila').toDate(),
+        details: `Failed to generate report: ${error.message}`,
+      });
+    } catch (auditError) {
+      console.error("Failed to log report generation error:", auditError);
+    }
+
     res.status(500).json({ 
-        error: "Failed to generate report", 
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: "Failed to generate report", 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

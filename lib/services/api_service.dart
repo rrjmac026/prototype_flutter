@@ -50,12 +50,14 @@ class ApiService {
                 final moisture = _parseDoubleValue(data['moisture']);
                 final temperature = _parseDoubleValue(data['temperature']);
                 final humidity = _parseDoubleValue(data['humidity']);
+                final bool waterState = data['waterState'] ?? false;
+                final bool fertilizerState = data['fertilizerState'] ?? false;
 
                 // Consider sensors connected if we have valid data
                 final bool isConnected =
                     moisture > 0 && temperature > 0 && humidity > 0;
 
-                // Log the sensor reading
+                // Log the sensor reading with system states
                 await _auditService.logSensorActivity(
                   'read',
                   {
@@ -65,6 +67,8 @@ class ApiService {
                     'moistureStatus':
                         data['moistureStatus'] ?? _getMoistureStatus(moisture),
                     'isConnected': isConnected,
+                    'waterState': waterState,
+                    'fertilizerState': fertilizerState,
                   },
                 );
 
@@ -77,6 +81,8 @@ class ApiService {
                   'timestamp':
                       data['timestamp'] ?? DateTime.now().toIso8601String(),
                   'isConnected': isConnected,
+                  'waterState': waterState,
+                  'fertilizerState': fertilizerState,
                 };
               }
             }

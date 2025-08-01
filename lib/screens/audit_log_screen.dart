@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/audit_log.dart';
@@ -19,24 +20,43 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   String? _selectedType;
   List<String> _availableTypes = [];
   DateTimeRange? _dateRange;
+  late Stream<List<AuditLog>> _logsStream;
+  late StreamController<List<AuditLog>> _logsStreamController;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    _logsStreamController = StreamController<List<AuditLog>>.broadcast();
+    _initializeRealTimeUpdates();
   }
 
-  Future<void> _loadInitialData() async {
-    setState(() => _isLoading = true);
+  void _initializeRealTimeUpdates() {
+    _logsStream = Stream.periodic(
+      const Duration(seconds: 3),
+      (_) => DateTime.now(),
+    ).asyncMap((_) => _auditService.getAuditLogs(
+          plantId: ApiService.defaultPlantId,
+          type: _selectedType,
+          startDate: _dateRange?.start,
+          endDate: _dateRange?.end,
+        ));
 
-    try {
-      await Future.wait([
-        _loadTypes(),
-        _fetchLogs(),
-      ]);
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    // Subscribe to stream updates
+    _logsStream.listen((logs) {
+      if (mounted) {
+        setState(() => _logs = logs);
+        _logsStreamController.add(logs);
+      }
+    });
+
+    // Load types once
+    _loadTypes();
+  }
+
+  void _onFilterChange() {
+    setState(() {
+      _initializeRealTimeUpdates();
+    });
   }
 
   Future<void> _loadTypes() async {
@@ -44,10 +64,12 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
     setState(() => _availableTypes = types);
   }
 
-  Future<void> _fetchLogs() async {
-    if (_isLoading) return;
+  Future<void> _fetchLogs({bool silent = false}) async {
+    if (_isLoading && !silent) return;
 
-    setState(() => _isLoading = true);
+    if (!silent) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final logs = await _auditService.getAuditLogs(
@@ -58,24 +80,20 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       );
 
       if (mounted) {
-        setState(() {
-          _logs = logs;
-          _isLoading = false;
-        });
+        _logsStreamController.add(logs);
+        if (!silent) {
+          setState(() => _isLoading = false);
+        }
       }
     } catch (e, stackTrace) {
       debugPrint('Error fetching logs: $e');
       debugPrint('Stack trace: $stackTrace');
 
-      if (mounted) {
-        setState(() {
-          _logs = [];
-          _isLoading = false;
-        });
-
+      if (mounted && !silent) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to load audit logs. Please try again.'),
+            content: const Text('Failed to load audit logs'),
             action: SnackBarAction(
               label: 'Retry',
               onPressed: _fetchLogs,
@@ -100,7 +118,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
 
     if (picked != null) {
       setState(() => _dateRange = picked);
-      _fetchLogs();
+      _onFilterChange();
     }
   }
 
@@ -156,9 +174,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
         children: [
           _buildFilters(),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildLogList(),
+            child: _buildLogList(),
           ),
         ],
       ),
@@ -207,7 +223,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                     ],
                     onChanged: (value) {
                       setState(() => _selectedType = value);
-                      _fetchLogs();
+                      _onFilterChange();
                     },
                   ),
                 ),
@@ -240,44 +256,76 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   }
 
   Widget _buildLogList() {
-    if (_logs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.history,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No audit logs found',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
-              onPressed: _fetchLogs,
-            ),
-          ],
-        ),
-      );
-    }
+    return StreamBuilder<List<AuditLog>>(
+      stream: _logsStreamController.stream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _logs.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    return RefreshIndicator(
-      onRefresh: _fetchLogs,
-      child: ListView.builder(
-        itemCount: _logs.length,
-        itemBuilder: (context, index) {
-          final log = _logs[index];
-          return _buildLogCard(log, context);
-        },
-      ),
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                const SizedBox(height: 16),
+                const Text('Failed to load audit logs'),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                  onPressed: () {
+                    setState(() {
+                      // Reinitialize stream
+                      _initializeRealTimeUpdates();
+                    });
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+
+        final logs = snapshot.data ?? _logs;
+
+        if (logs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.history, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                const Text('No audit logs found'),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  onPressed: () {
+                    setState(() {
+                      _initializeRealTimeUpdates();
+                    });
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {
+              _initializeRealTimeUpdates();
+            });
+          },
+          child: ListView.builder(
+            itemCount: logs.length,
+            itemBuilder: (context, index) =>
+                _buildLogCard(logs[index], context),
+          ),
+        );
+      },
     );
   }
 
@@ -295,7 +343,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
           ),
         ),
         title: Text(
-          '${log.getDisplayTitle()}: ${log.action.replaceAll('_', ' ').toUpperCase()}',
+          '${log.getDisplayTitle()}: ${log.getActionDisplay()}',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Column(
@@ -305,7 +353,17 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
               DateUtil.formatDateTime(log.timestamp),
               style: TextStyle(fontSize: 12, color: theme.hintColor),
             ),
-            if (log.details != null)
+            // Add system details
+            if (log.hasSystemActivity && log.getSystemDetails() != null)
+              Text(
+                log.getSystemDetails()!,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.secondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            if (!log.hasSystemActivity && log.details != null)
               Text(
                 log.details!,
                 style: TextStyle(fontSize: 11, color: theme.hintColor),
@@ -430,15 +488,15 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                   _buildSensorDataItem(
                     Icons.opacity,
                     'Water Pump',
-                    data['waterState'] ? 'ON' : 'OFF',
-                    Colors.blue,
+                    data['waterState'] ? 'ACTIVE' : 'INACTIVE',
+                    data['waterState'] ? Colors.blue : Colors.grey,
                   ),
                 if (data['fertilizerState'] != null)
                   _buildSensorDataItem(
                     Icons.local_florist,
                     'Fertilizer',
-                    data['fertilizerState'] ? 'ON' : 'OFF',
-                    Colors.green,
+                    data['fertilizerState'] ? 'FEEDING' : 'IDLE',
+                    data['fertilizerState'] ? Colors.green : Colors.grey,
                   ),
               ],
             ),
@@ -469,5 +527,10 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
       ),
     );
   }
-}
 
+  @override
+  void dispose() {
+    _logsStreamController.close();
+    super.dispose();
+  }
+}
