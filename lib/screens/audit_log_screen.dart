@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/audit_log.dart';
 import '../services/audit_service.dart';
 import '../services/api_service.dart';
+import '../utils/date_util.dart';
 
 class AuditLogScreen extends StatefulWidget {
   const AuditLogScreen({super.key});
@@ -229,7 +229,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'Date Range: ${DateFormat('MMM d').format(_dateRange!.start)} - ${DateFormat('MMM d').format(_dateRange!.end)}',
+                  'Date Range: ${DateUtil.formatDateRange(_dateRange!.start, _dateRange!.end)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -302,7 +302,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              DateFormat('MMM d, y • h:mm a').format(log.timestamp),
+              DateUtil.formatDateTime(log.timestamp),
               style: TextStyle(fontSize: 12, color: theme.hintColor),
             ),
             if (log.details != null)
@@ -363,7 +363,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                   ),
                 ),
                 Text(
-                  'Time: ${DateFormat('MMMM d, y • h:mm:ss a').format(log.timestamp)}',
+                  'Time: ${DateUtil.formatDateTimeDetailed(log.timestamp)}',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -470,3 +470,4 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
     );
   }
 }
+
