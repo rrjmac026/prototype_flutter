@@ -133,18 +133,33 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
           'start': _dateRange!.start.toIso8601String(),
           'end': _dateRange!.end.toIso8601String(),
         },
-        'format': 'csv'
+        'format': 'pdf'
       };
 
       final url = Uri.parse('${ApiService.baseUrl}/audit-logs/export')
           .replace(queryParameters: queryParams);
 
-      // Open URL in browser for download
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+      // Use platform-specific download method with proper headers
+      if (await canLaunchUrl(url)) {
+        await launchUrl(
+          url,
+          mode: LaunchMode.externalApplication,
+          webOnlyWindowName: '_blank',
+          // Add headers for PDF response
+          webViewConfiguration: const WebViewConfiguration(
+            headers: {
+              'Accept': 'application/pdf',
+              'Content-Type': 'application/pdf',
+            },
+          ),
+        );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Audit log export started')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PDF download started')),
+        );
+      } else {
+        throw 'Could not launch export URL';
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to export logs: $e')),
@@ -440,6 +455,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
           spacing: 8,
           runSpacing: 8,
           children: [
+            // Basic sensor readings
             if (data['moisture'] != null)
               _buildSensorDataItem(
                 Icons.water_drop,
@@ -461,69 +477,99 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
                 '${data['humidity']}%',
                 Colors.green,
               ),
-            if (data['moistureStatus'] != null)
-              _buildSensorDataItem(
-                Icons.info_outline,
-                'Status',
-                data['moistureStatus'].toString(),
-                Colors.purple,
-              ),
-            if (data['isConnected'] != null)
-              _buildSensorDataItem(
-                Icons.wifi,
-                'Connection',
-                data['isConnected'] ? 'ONLINE' : 'OFFLINE',
-                data['isConnected'] ? Colors.green : Colors.red,
-              ),
           ],
         ),
-        if (data['waterState'] != null || data['fertilizerState'] != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (data['waterState'] != null)
-                  _buildSensorDataItem(
-                    Icons.opacity,
-                    'Water Pump',
-                    data['waterState'] ? 'ACTIVE' : 'INACTIVE',
-                    data['waterState'] ? Colors.blue : Colors.grey,
-                  ),
-                if (data['fertilizerState'] != null)
-                  _buildSensorDataItem(
-                    Icons.local_florist,
-                    'Fertilizer',
-                    data['fertilizerState'] ? 'FEEDING' : 'IDLE',
-                    data['fertilizerState'] ? Colors.green : Colors.grey,
-                  ),
-              ],
-            ),
+        // System states - moved to a separate row for better visibility
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              // Water state indicator - explicitly handle boolean values
+              _buildSensorDataItem(
+                Icons.water_drop,
+                'Water Pump',
+                data['waterState'] == true ? 'ON' : 'OFF',
+                data['waterState'] == true ? Colors.blue : Colors.grey,
+              ),
+              // Fertilizer state indicator - explicitly handle boolean values
+              _buildSensorDataItem(
+                Icons.local_florist,
+                'Fertilizer',
+                data['fertilizerState'] == true ? 'ON' : 'OFF',
+                data['fertilizerState'] == true ? Colors.green : Colors.grey,
+              ),
+              // Moisture status
+              if (data['moistureStatus'] != null)
+                _buildSensorDataItem(
+                  Icons.info_outline,
+                  'Status',
+                  data['moistureStatus'].toString(),
+                  _getMoistureStatusColor(data['moistureStatus'].toString()),
+                ),
+              // Connection status
+              if (data['isConnected'] != null)
+                _buildSensorDataItem(
+                  Icons.wifi,
+                  'Connection',
+                  data['isConnected'] ? 'ONLINE' : 'OFFLINE',
+                  data['isConnected'] ? Colors.green : Colors.red,
+                ),
+            ],
           ),
+        ),
       ],
     );
   }
 
+  // Add helper method to get moisture status color
+  Color _getMoistureStatusColor(String status) {
+    switch (status.toUpperCase()) {
+      case 'WET':
+        return Colors.blue;
+      case 'HUMID':
+        return Colors.green;
+      case 'DRY':
+        return Colors.orange;
+      case 'SENSOR ERROR':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
   Widget _buildSensorDataItem(
-    IconData icon,
-    String label,
-    String value,
-    Color color,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 4),
-          Text('$label: $value', style: TextStyle(color: color)),
-        ],
+      IconData icon, String label, String value, Color color) {
+    return Card(
+      elevation: 0,
+      color: color.withOpacity(0.1),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: color.withOpacity(0.8),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
