@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:prototype/models/schedule.dart';
+import '../services/audit_service.dart';
 
 class ScheduleService {
   static const String baseUrl = 'https://server-5527.onrender.com/api';
   static const String backupUrl = 'http://192.168.1.8:3000/api';
+
+  final AuditService _auditService = AuditService();
 
   // Get all schedules for a plant
   Future<List<Schedule>> getSchedules(String plantId, {bool? enabled}) async {
@@ -14,15 +17,13 @@ class ScheduleService {
       String buildEndpoint(String base) {
         final uri = Uri.parse('$base/schedules/$plantId');
         if (enabled != null) {
-          return uri.replace(queryParameters: {'enabled': enabled.toString()}).toString();
+          return uri.replace(
+              queryParameters: {'enabled': enabled.toString()}).toString();
         }
         return uri.toString();
       }
 
-      final endpoints = [
-        buildEndpoint(baseUrl),
-        buildEndpoint(backupUrl)
-      ];
+      final endpoints = [buildEndpoint(baseUrl), buildEndpoint(backupUrl)];
 
       for (final endpoint in endpoints) {
         try {
@@ -34,9 +35,7 @@ class ScheduleService {
           if (response.statusCode == 200) {
             final data = json.decode(response.body);
             final List<dynamic> scheduleList = data['schedules'];
-            return scheduleList
-                .map((json) => Schedule.fromJson(json))
-                .toList();
+            return scheduleList.map((json) => Schedule.fromJson(json)).toList();
           }
         } catch (e) {
           debugPrint('Error with endpoint $endpoint: $e');
@@ -53,24 +52,29 @@ class ScheduleService {
   // Create a new schedule
   Future<Schedule?> createSchedule(Schedule schedule) async {
     try {
-      final endpoints = [
-        '$baseUrl/schedules',
-        '$backupUrl/schedules'
-      ];
+      final endpoints = ['$baseUrl/schedules', '$backupUrl/schedules'];
 
       for (final endpoint in endpoints) {
         try {
-          final response = await http.post(
-            Uri.parse(endpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: json.encode(schedule.toJson()),
-          ).timeout(const Duration(seconds: 10));
+          final response = await http
+              .post(
+                Uri.parse(endpoint),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                },
+                body: json.encode(schedule.toJson()),
+              )
+              .timeout(const Duration(seconds: 10));
 
           if (response.statusCode == 201) {
             final data = json.decode(response.body);
+            // Log the schedule creation
+            await _auditService.logScheduleActivity(
+              'created',
+              schedule.toJson(),
+            );
+
             return Schedule.fromJson({
               ...schedule.toJson(),
               'id': data['id'],
@@ -90,7 +94,8 @@ class ScheduleService {
   }
 
   // Update a schedule
-  Future<bool> updateSchedule(String scheduleId, Map<String, dynamic> data) async {
+  Future<bool> updateSchedule(
+      String scheduleId, Map<String, dynamic> data) async {
     try {
       final endpoints = [
         '$baseUrl/schedules/$scheduleId',
@@ -99,16 +104,24 @@ class ScheduleService {
 
       for (final endpoint in endpoints) {
         try {
-          final response = await http.put(
-            Uri.parse(endpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: json.encode(data),
-          ).timeout(const Duration(seconds: 10));
+          final response = await http
+              .put(
+                Uri.parse(endpoint),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                },
+                body: json.encode(data),
+              )
+              .timeout(const Duration(seconds: 10));
 
           if (response.statusCode == 200) {
+            // Log the schedule update
+            await _auditService.logScheduleActivity(
+              'updated',
+              {'id': scheduleId, ...data},
+            );
+
             return true;
           }
         } catch (e) {
@@ -139,6 +152,12 @@ class ScheduleService {
           ).timeout(const Duration(seconds: 10));
 
           if (response.statusCode == 200) {
+            // Log the schedule deletion
+            await _auditService.logScheduleActivity(
+              'deleted',
+              {'id': scheduleId},
+            );
+
             return true;
           }
         } catch (e) {

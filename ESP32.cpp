@@ -9,6 +9,7 @@
 #include <esp_task_wdt.h>
 #include <WiFiClientSecure.h>
 #include <esp_log.h>  // Add this with other includes
+#include <vector>    // Add this for vector support
 
 const int waterRelayPin = 26;
 const int fertilizerRelayPin = 23;
@@ -45,7 +46,7 @@ const char* password = "12345678";
 
 // Server Details
 const char* serverUrl = "http://192.168.1.8:3000/api/sensor-data";
-const char* serverUrl2 = "https://server-5527.onrender.com/api/sensor-data";
+const char* serverUrl2 = "https://server-ydsa.onrender.com/api/sensor-data";
 const char* FIXED_PLANT_ID = "C8dA5OfZEC1EGAhkdAB4";
 
 // NTP Server settings
@@ -71,6 +72,7 @@ struct Schedule {
     String time;
     int duration;
     bool enabled;
+    std::vector<String> days;  // Add days vector for fertilizer schedules
 };
 
 std::vector<Schedule> schedules;
@@ -448,6 +450,9 @@ String getMoistureStatus(int moisturePercent) {
 // Add new constant for watchdog control
 const bool USE_WATCHDOG = true;
 
+// Forward declare sendEventData (add before setup())
+void sendEventData(const char* type, const char* action, const char* details = nullptr);
+
 void setup() {
     // Add these lines at the very start of setup()
     esp_log_level_set("*", ESP_LOG_NONE);  // Disable all ESP32 debug output
@@ -555,7 +560,9 @@ void checkSchedules() {
     }
     
     char currentTime[6];
+    char currentDate[3];
     strftime(currentTime, sizeof(currentTime), "%H:%M", &timeinfo);
+    strftime(currentDate, sizeof(currentDate), "%d", &timeinfo);
     
     for (const auto& schedule : schedules) {
         // Skip if already triggered this minute or not enabled
@@ -584,13 +591,24 @@ void checkSchedules() {
                 triggeredSchedules[schedule.id] = true;
             }
             else if (schedule.type == "fertilizing" && !fertilizerState) {
-                fertilizerState = true;
-                previousFertilizerMillis = millis();
-                digitalWrite(fertilizerRelayPin, HIGH);
-                String message = "Smart Plant System: Starting scheduled fertilizing";
-                Serial.println(message);
-                queueSMS(message.c_str());
-                triggeredSchedules[schedule.id] = true;  // Mark as triggered
+                // Check if current date matches any of the scheduled dates
+                bool isScheduledDate = false;
+                for (const auto& day : schedule.days) {
+                    if (day == String(currentDate)) {
+                        isScheduledDate = true;
+                        break;
+                    }
+                }
+                
+                if (isScheduledDate) {
+                    fertilizerState = true;
+                    previousFertilizerMillis = millis();
+                    digitalWrite(fertilizerRelayPin, HIGH);
+                    String message = "Smart Plant System: Starting scheduled fertilizing for day " + String(currentDate);
+                    Serial.println(message);
+                    queueSMS(message.c_str());
+                    triggeredSchedules[schedule.id] = true;
+                }
             }
         }
     }
@@ -622,9 +640,30 @@ const unsigned long READ_INTERVAL = 30000;  // Read sensors every 30 seconds
 unsigned long lastSendTime = 0;
 unsigned long lastReadTime = 0;
 
+// Add after other global variables (before setup())
+bool isScheduledDate = false;
+String currentDate;
+
+// Add these with other global variables at the top
+unsigned long lastStatusPrintMillis = 0;
+const unsigned long STATUS_PRINT_INTERVAL = 5000;  // Print status every 5 seconds
+bool lastWaterState = false;
+bool lastFertilizerState = false;
+
+// Add new global variable for diagnostics logging
+unsigned long lastDiagnosticsLog = 0;
+
 void loop() {
     unsigned long currentMillis = millis();
     static int moisturePercent = 0;  // Add this line to declare moisturePercent
+    
+    // Get current date at the start of loop
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+        char dateStr[3];
+        strftime(dateStr, sizeof(dateStr), "%d", &timeinfo);
+        currentDate = String(dateStr);
+    }
     
     // WiFi check
     if (WiFi.status() != WL_CONNECTED) {
@@ -674,12 +713,41 @@ void loop() {
 
     resumeWatchdog();
 
+    // Replace the direct status prints with this new code block
+    if (currentMillis - lastStatusPrintMillis >= STATUS_PRINT_INTERVAL || 
+        lastWaterState != waterState || 
+        lastFertilizerState != fertilizerState) {
+            
+        Serial.println("\n=== System Status ===");
+        Serial.println("💧 Water Pump Status: " + String(waterState ? "ON" : "OFF"));
+        Serial.println("🌱 Fertilizer Status: " + String(fertilizerState ? "ON" : "OFF"));
+        Serial.println("====================\n");
+        
+        lastStatusPrintMillis = currentMillis;
+        lastWaterState = waterState;
+        lastFertilizerState = fertilizerState;
+    }
+
     // Enhanced water pump control logic
     if (waterState) {
+        Serial.println("💧 Water Pump Status: ON");  // Add this line
         if (currentMillis - previousWaterMillis >= waterOnDuration || 
             moisturePercent <= dryThreshold || moisturePercent >= disconnectedThreshold) {
             waterState = false;
             digitalWrite(waterRelayPin, LOW);
+            
+            String reason;
+            if (moisturePercent >= disconnectedThreshold) {
+                reason = "Sensor disconnected or not in soil";
+                sendEventData("watering", "stopped", reason.c_str());
+            } else if (moisturePercent <= dryThreshold) {
+                reason = "Target moisture level reached";
+                sendEventData("watering", "completed", reason.c_str());
+            } else {
+                reason = "Duration completed";
+                sendEventData("watering", "completed", reason.c_str());
+            }
+            
             String message;
             if (moisturePercent >= disconnectedThreshold) {
                 message = "Smart Plant System: Watering stopped. Reason: Sensor disconnected or not in soil.";
@@ -692,11 +760,16 @@ void loop() {
             queueSMS(message.c_str());
         }
     } else {
+        Serial.println("💧 Water Pump Status: OFF");  // Add this line
         // Only start watering if soil is dry
         if (moisturePercent > dryThreshold && moisturePercent < disconnectedThreshold) {  // DRY condition only
             waterState = true;
             previousWaterMillis = currentMillis;
             digitalWrite(waterRelayPin, HIGH);
+            
+            String details = "Moisture: " + String(moisturePercent) + "%";
+            sendEventData("watering", "started", details.c_str());
+            
             Serial.println("Water pump ON: " + moistureStatus);
             String smsMessage = "Smart Plant System: Started watering. Soil is dry (" + String(soilMoistureValue) + " reading)";
             queueSMS(smsMessage.c_str());
@@ -705,12 +778,31 @@ void loop() {
 
     // Fertilizer timing control
     if (fertilizerState) {
+        Serial.println("🌱 Fertilizer Status: ON");  // Add this line
         if (currentMillis - previousFertilizerMillis >= fertilizerOnDuration) {
             fertilizerState = false;
             digitalWrite(fertilizerRelayPin, LOW);
+            
+            sendEventData("fertilizer", "completed", "Duration completed");
+            
             String completionMsg = "Smart Plant System: Fertilizer cycle completed.";
             Serial.println("✅ " + completionMsg);
             queueSMS(completionMsg.c_str());
+        }
+    } else {
+        Serial.println("🌱 Fertilizer Status: OFF");  // Add this line
+        // In checkSchedules() when starting fertilizer
+        if (isScheduledDate) {
+            fertilizerState = true;
+            previousFertilizerMillis = millis();
+            digitalWrite(fertilizerRelayPin, HIGH);
+            
+            String details = "Scheduled application on day " + String(currentDate);
+            sendEventData("fertilizer", "started", details.c_str());
+            
+            String message = "Smart Plant System: Starting scheduled fertilizing for day " + String(currentDate);
+            Serial.println(message);
+            queueSMS(message.c_str());
         }
     }
 
@@ -732,5 +824,88 @@ void loop() {
         lastHeapCheck = currentMillis;
     }
 
+    // Log system diagnostics
+    logSystemDiagnostics();
+
     delay(100);
+}
+
+// Add near the other helper functions
+void sendEventData(const char* type, const char* action, const char* details) {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("❌ WiFi not connected - Event not sent");
+        return;
+    }
+
+    StaticJsonDocument<512> doc;
+    doc["plantId"] = FIXED_PLANT_ID;
+    doc["type"] = type;
+    doc["action"] = action;
+    doc["status"] = "success";  // Add status field
+    
+    if (details) {
+        doc["details"] = details;
+    }
+
+    // Add more detailed sensor data
+    JsonObject sensorData = doc.createNestedObject("sensorData");
+    sensorData["moisture"] = convertToMoisturePercent(analogRead(soilMoisturePin));
+    sensorData["temperature"] = dht.readTemperature();
+    sensorData["humidity"] = dht.readHumidity();
+    sensorData["waterState"] = waterState;
+    sensorData["fertilizerState"] = fertilizerState;
+    sensorData["moistureStatus"] = getMoistureStatus(convertToMoisturePercent(analogRead(soilMoisturePin)));
+    sensorData["isConnected"] = WiFi.status() == WL_CONNECTED;
+    sensorData["signalStrength"] = WiFi.RSSI();
+    sensorData["gsmStatus"] = gsmStatus == GSM_READY ? "ready" : "error";
+
+    // Add system metrics
+    JsonObject systemData = doc.createNestedObject("systemData");
+    systemData["freeHeap"] = ESP.getFreeHeap();
+    systemData["uptime"] = millis() / 1000;
+    systemData["wifiSignal"] = WiFi.RSSI();
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+
+    // Try both servers
+    bool success = false;
+    
+    // Try Render server first
+    WiFiClientSecure *client = new WiFiClientSecure;
+    if(client) {
+        client->setInsecure();
+        HTTPClient https;
+        https.begin(*client, String(serverUrl2) + "/audit-logs");
+        https.addHeader("Content-Type", "application/json");
+        
+        int httpCode = https.POST(jsonString);
+        success = (httpCode > 0 && httpCode < 400);
+        https.end();
+        delete client;
+    }
+
+    // Try local server if remote failed
+    if (!success) {
+        HTTPClient http;
+        http.begin(String(serverUrl) + "/audit-logs");
+        http.addHeader("Content-Type", "application/json");
+        
+        int httpCode = http.POST(jsonString);
+        success = (httpCode > 0 && httpCode < 400);
+        http.end();
+    }
+
+    Serial.println(success ? "✅ Event logged successfully" : "❌ Failed to log event");
+}
+
+// Add new helper function for logging system diagnostics
+void logSystemDiagnostics() {
+    if (millis() - lastDiagnosticsLog >= 3600000) { // Every hour
+        String details = "Free heap: " + String(ESP.getFreeHeap()) + 
+                        ", Uptime: " + String(millis() / 1000) + "s" +
+                        ", WiFi: " + String(WiFi.RSSI()) + "dBm";
+        sendEventData("system", "diagnostics", details.c_str());
+        lastDiagnosticsLog = millis();
+    }
 }

@@ -6,13 +6,16 @@ import 'dart:math'; // Add this import for pow function
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:prototype/utils/report_config.dart';
+import '../services/audit_service.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://server-5527.onrender.com/api';
+  static const String baseUrl = 'https://server-ydsa.onrender.com/api';
   static const String backupUrl = 'http://192.168.1.8:3000/api';
   static const String defaultPlantId =
       'C8dA5OfZEC1EGAhkdAB4'; // Match ESP32's FIXED_PLANT_ID
   static const String defaultPlantName = 'Default Plant';
+
+  final AuditService _auditService = AuditService();
 
   String _getMoistureStatus(double value) {
     if (value == 1023) return 'NO DATA';
@@ -52,6 +55,19 @@ class ApiService {
                 final bool isConnected =
                     moisture > 0 && temperature > 0 && humidity > 0;
 
+                // Log the sensor reading
+                await _auditService.logSensorActivity(
+                  'read',
+                  {
+                    'moisture': moisture,
+                    'temperature': temperature,
+                    'humidity': humidity,
+                    'moistureStatus':
+                        data['moistureStatus'] ?? _getMoistureStatus(moisture),
+                    'isConnected': isConnected,
+                  },
+                );
+
                 return {
                   'moisture': moisture,
                   'temperature': temperature,
@@ -74,6 +90,11 @@ class ApiService {
       return _getDefaultData();
     } catch (e) {
       debugPrint('Error fetching sensor data: $e');
+      // Log sensor reading failure
+      await _auditService.logSensorActivity(
+        'error',
+        {'error': e.toString()},
+      );
       return _getDefaultData();
     }
   }

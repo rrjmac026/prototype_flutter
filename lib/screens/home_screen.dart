@@ -3,6 +3,7 @@ import 'package:prototype/screens/dashboard_screen.dart';
 import 'package:prototype/screens/profile_screen.dart';
 import 'package:prototype/screens/messages_screen.dart';
 import 'package:prototype/screens/schedule_screen.dart';
+import 'package:prototype/screens/audit_log_screen.dart'; // Import the AuditLogScreen
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const DashboardScreen(),
     const MessagesScreen(),
     const ScheduleScreen(),
+    const AuditLogScreen(), // Add this line
     const ProfileScreen(),
   ];
 
@@ -44,6 +46,11 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.schedule),
             label: 'Schedule',
+          ),
+          NavigationDestination(
+            // Add this section
+            icon: Icon(Icons.history),
+            label: 'Audit Log',
           ),
           NavigationDestination(
             icon: Icon(Icons.person),
