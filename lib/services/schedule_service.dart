@@ -53,6 +53,8 @@ class ScheduleService {
   Future<Schedule?> createSchedule(Schedule schedule) async {
     try {
       final endpoints = ['$baseUrl/schedules', '$backupUrl/schedules'];
+      final scheduleData = schedule.toJson();
+      debugPrint('Creating schedule with data: $scheduleData');
 
       for (final endpoint in endpoints) {
         try {
@@ -63,33 +65,40 @@ class ScheduleService {
                   'Content-Type': 'application/json',
                   'Accept': 'application/json'
                 },
-                body: json.encode(schedule.toJson()),
+                body: json.encode(scheduleData),
               )
-              .timeout(const Duration(seconds: 10));
+              .timeout(const Duration(seconds: 30)); // Increased timeout
+
+          debugPrint('Server response status: ${response.statusCode}');
+          debugPrint('Server response body: ${response.body}');
 
           if (response.statusCode == 201) {
             final data = json.decode(response.body);
-            // Log the schedule creation
-            await _auditService.logScheduleActivity(
-              'created',
-              schedule.toJson(),
-            );
+            if (data['success'] == true && data['schedule'] != null) {
+              final scheduleData = data['schedule'];
+              final scheduleId =
+                  scheduleData['id'] ?? scheduleData['_id']?.toString();
 
-            return Schedule.fromJson({
-              ...schedule.toJson(),
-              'id': data['id'],
-              'createdAt': DateTime.now().toIso8601String(),
-            });
+              await _auditService.logScheduleActivity(
+                'created',
+                scheduleData,
+              );
+
+              return Schedule.fromJson({
+                ...scheduleData,
+                'id': scheduleId,
+              });
+            }
           }
         } catch (e) {
           debugPrint('Error with endpoint $endpoint: $e');
           continue;
         }
       }
-      return null;
+      throw Exception('Failed to create schedule: Server error');
     } catch (e) {
       debugPrint('Error creating schedule: $e');
-      return null;
+      rethrow;
     }
   }
 

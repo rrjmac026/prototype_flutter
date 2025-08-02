@@ -18,7 +18,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     // Fetch schedules when the screen is first loaded
     _loadSchedules();
   }
-  
+
   void _loadSchedules() {
     // Add a small delay to ensure the widget is fully mounted
     Future.delayed(const Duration(milliseconds: 300), () {
@@ -37,25 +37,24 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         actions: [
           Consumer<ScheduleProvider>(
             builder: (context, provider, _) => IconButton(
-              icon: provider.isLoading 
-                ? const SizedBox(
-                    width: 24, 
-                    height: 24, 
-                    child: CircularProgressIndicator(strokeWidth: 2)
-                  )
-                : const Icon(Icons.refresh),
-              onPressed: provider.isLoading 
-                ? null 
-                : () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Refreshing schedules...'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                    Provider.of<ScheduleProvider>(context, listen: false)
-                        .refreshSchedules();
-                  },
+              icon: provider.isLoading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.refresh),
+              onPressed: provider.isLoading
+                  ? null
+                  : () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Refreshing schedules...'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                      Provider.of<ScheduleProvider>(context, listen: false)
+                          .refreshSchedules();
+                    },
             ),
           ),
         ],
@@ -66,7 +65,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (scheduleProvider.error != null && scheduleProvider.schedules.isEmpty) {
+          if (scheduleProvider.error != null &&
+              scheduleProvider.schedules.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -98,9 +98,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ),
             );
           }
-          
+
           // Show a banner if there's an error but we still have schedules to display
-          if (scheduleProvider.error != null && scheduleProvider.schedules.isNotEmpty) {
+          if (scheduleProvider.error != null &&
+              scheduleProvider.schedules.isNotEmpty) {
             return Column(
               children: [
                 Container(
@@ -108,7 +109,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Row(
                     children: [
-                      const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                      const Icon(Icons.warning_amber_rounded,
+                          color: Colors.orange),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -154,7 +156,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
     );
   }
-  
+
   Widget _buildScheduleList(ScheduleProvider scheduleProvider) {
     return Column(
       children: [
@@ -197,10 +199,26 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     showDialog(
       context: context,
       builder: (context) => ScheduleDialog(
-        onSave: (schedule) {
-          Provider.of<ScheduleProvider>(context, listen: false)
-              .createSchedule(schedule);
-          Navigator.of(context).pop();
+        onSave: (schedule) async {
+          try {
+            final provider =
+                Provider.of<ScheduleProvider>(context, listen: false);
+            await provider.createSchedule(schedule);
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Schedule created successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to create schedule: ${e.toString()}'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         },
       ),
     );
@@ -212,16 +230,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       builder: (context) => ScheduleDialog(
         schedule: schedule,
         onSave: (updatedSchedule) {
-          Provider.of<ScheduleProvider>(context, listen: false).updateSchedule(
-              schedule.id!,
-              {
-                'type': updatedSchedule.type,
-                'time': updatedSchedule.time,
-                'days': updatedSchedule.days,
-                'duration': updatedSchedule.duration,
-                'enabled': updatedSchedule.enabled,
-                'label': updatedSchedule.label,
-              });
+          Provider.of<ScheduleProvider>(context, listen: false)
+              .updateSchedule(schedule.id!, {
+            'type': updatedSchedule.type,
+            'time': updatedSchedule.time,
+            'days': updatedSchedule.days,
+            'duration': updatedSchedule.duration,
+            'enabled': updatedSchedule.enabled,
+            'label': updatedSchedule.label,
+          });
           Navigator.of(context).pop();
         },
       ),
@@ -271,12 +288,8 @@ class ScheduleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = schedule.type == 'watering'
-        ? Icons.water_drop
-        : Icons.grass;
-    final color = schedule.type == 'watering'
-        ? Colors.blue
-        : Colors.green;
+    final icon = schedule.type == 'watering' ? Icons.water_drop : Icons.grass;
+    final color = schedule.type == 'watering' ? Colors.blue : Colors.green;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -407,7 +420,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     'Saturday',
     'Sunday',
   ];
-  
+
   final List<String> _suggestedLabels = [
     'Morning',
     'Afternoon',
@@ -425,9 +438,10 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     _days = widget.schedule?.days ?? ['Monday'];
     _duration = widget.schedule?.duration ?? 5;
     _enabled = widget.schedule?.enabled ?? true;
-    _labelController = TextEditingController(text: widget.schedule?.label ?? '');
+    _labelController =
+        TextEditingController(text: widget.schedule?.label ?? '');
   }
-  
+
   @override
   void dispose() {
     _labelController.dispose();
@@ -538,7 +552,8 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
             const SizedBox(height: 16),
 
             // Label field
-            const Text('Label (optional)', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Label (optional)',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             TextField(
               controller: _labelController,
               decoration: InputDecoration(
@@ -550,7 +565,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
               ),
             ),
             const SizedBox(height: 8),
-            
+
             // Suggested labels
             Wrap(
               spacing: 8,
@@ -566,7 +581,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
               }).toList(),
             ),
             const SizedBox(height: 16),
-            
+
             // Enabled toggle
             Row(
               children: [
@@ -610,7 +625,9 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
               days: _days,
               duration: _duration,
               enabled: _enabled,
-              label: _labelController.text.isNotEmpty ? _labelController.text : null,
+              label: _labelController.text.isNotEmpty
+                  ? _labelController.text
+                  : null,
               createdAt: widget.schedule?.createdAt,
               updatedAt: DateTime.now(),
             );

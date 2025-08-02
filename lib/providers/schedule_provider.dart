@@ -41,8 +41,9 @@ class ScheduleProvider with ChangeNotifier {
     _error = null;
 
     try {
-      final schedules = await _scheduleService.getSchedules(plantId, enabled: enabled);
-      
+      final schedules =
+          await _scheduleService.getSchedules(plantId, enabled: enabled);
+
       // Only update if we got schedules back or if our current list is empty
       if (schedules.isNotEmpty || _schedules.isEmpty) {
         _schedules = schedules;
@@ -50,7 +51,7 @@ class ScheduleProvider with ChangeNotifier {
       } else {
         debugPrint('📅 Received empty schedules list, keeping existing data');
       }
-      
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -70,18 +71,32 @@ class ScheduleProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final newSchedule = await _scheduleService.createSchedule(schedule);
+      // Add timeout to match service layer
+      final newSchedule =
+          await _scheduleService.createSchedule(schedule).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException(
+              'Request timed out. Please check your connection and try again.');
+        },
+      );
+
       if (newSchedule != null) {
         _schedules.add(newSchedule);
         _isLoading = false;
         notifyListeners();
         return true;
       } else {
-        _error = 'Failed to create schedule';
+        _error = 'Failed to create schedule: Server returned no data';
         _isLoading = false;
         notifyListeners();
         return false;
       }
+    } on TimeoutException catch (e) {
+      _error = e.message ?? 'Request timed out';
+      _isLoading = false;
+      notifyListeners();
+      return false;
     } catch (e) {
       _error = 'Failed to create schedule: ${e.toString()}';
       _isLoading = false;
@@ -90,7 +105,8 @@ class ScheduleProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateSchedule(String scheduleId, Map<String, dynamic> data) async {
+  Future<bool> updateSchedule(
+      String scheduleId, Map<String, dynamic> data) async {
     _isLoading = true;
     _error = null;
     notifyListeners();

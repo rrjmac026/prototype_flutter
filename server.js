@@ -54,10 +54,10 @@ async function saveSensorData(data) {
     const collection = await getCollection('sensor_data');
     const result = await collection.insertOne({
         ...data,
-        // Ensure waterState and fertilizerState are boolean values
         waterState: Boolean(data.waterState),
         fertilizerState: Boolean(data.fertilizerState),
-        timestamp: moment().tz('Asia/Manila').toDate()
+        timestamp: data.timestamp ? new Date(data.timestamp) : moment().tz('Asia/Manila').toDate(),
+        heartbeat: Boolean(data.heartbeat)
     });
 
     // Also log this as an audit event
@@ -65,10 +65,10 @@ async function saveSensorData(data) {
     await auditCollection.insertOne({
         plantId: data.plantId,
         type: 'sensor',
-        action: 'read',
+        action: data.heartbeat ? 'heartbeat' : 'read',
         status: 'success',
         timestamp: moment().tz('Asia/Manila').toDate(),
-        details: 'Sensor reading recorded',
+        details: data.heartbeat ? 'Heartbeat received' : 'Sensor reading recorded',
         sensorData: {
             moisture: data.moisture,
             temperature: data.temperature,
@@ -76,7 +76,8 @@ async function saveSensorData(data) {
             moistureStatus: data.moistureStatus,
             waterState: Boolean(data.waterState),
             fertilizerState: Boolean(data.fertilizerState),
-            isConnected: data.isConnected
+            isConnected: data.isConnected,
+            heartbeat: Boolean(data.heartbeat)
         }
     });
 
@@ -197,19 +198,26 @@ app.post("/api/sensor-data", async (req, res) => {
   try {
     const data = req.body;
 
-    // Update validation to include states
     if (!data.plantId || data.moisture == null || data.temperature == null || 
         data.humidity == null || data.waterState == null || data.fertilizerState == null) {
       return res.status(400).json({ error: "Incomplete sensor data" });
     }
 
-    // Add explicit connection state from ESP32
     data.isConnected = true;
     data.moistureStatus = getMoistureStatus(data.moisture);
     data.waterState = Boolean(data.waterState);
     data.fertilizerState = Boolean(data.fertilizerState);
+    data.heartbeat = Boolean(data.heartbeat);
 
     const result = await saveSensorData(data);
+    
+    // Log different messages based on heartbeat status
+    if (data.heartbeat) {
+      console.log(`💓 Heartbeat received from plant ${data.plantId}`);
+    } else {
+      console.log(`📡 New sensor reading from plant ${data.plantId}`);
+    }
+
     res.status(201).json({ message: "Sensor data saved", id: result.insertedId });
   } catch (error) {
     console.error("❌ Error saving sensor data:", error.message);
@@ -878,11 +886,11 @@ app.get("/api/audit-logs", async (req, res) => {
 });
 
 // Export audit logs (Add this before the Start Server section)
+// Enhanced Export audit logs endpoint - Replace the existing one
 app.get("/api/audit-logs/export", async (req, res) => {
   try {
     const { start, end, type, plantId, format = 'pdf' } = req.query;
 
-    // Force content type and headers for PDF
     if (format.toLowerCase() === 'pdf') {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 
@@ -908,125 +916,17 @@ app.get("/api/audit-logs/export", async (req, res) => {
       .toArray();
 
     if (format.toLowerCase() === 'pdf') {
-      // Force content type and attachment
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=audit_logs_${moment().format('YYYY-MM-DD')}.pdf`);
-      
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ 
+        margin: 40,
+        size: 'A4'
+      });
       doc.pipe(res);
 
-      // Draw header
-      let currentY = drawPageHeader(doc, 1, 'Audit Logs Report');
-      currentY += 30;
-
-      // Report metadata section
-      const reportWidth = doc.page.width - 100;
-      const startX = 50;
-
-      // Add metadata box
-      doc.rect(startX, currentY, reportWidth, 60)
-         .fillColor('#f5f5f5')
-         .fill()
-         .strokeColor('#000000')
-         .stroke();
-
-      // Add metadata content
-      doc.fillColor('#000000')
-         .fontSize(10)
-         .font('Helvetica-Bold')
-         .text(`Plant ID: ${plantId || 'All Plants'}`, startX + 15, currentY + 15)
-         .text(`Period: ${start && end ? `${moment(start).format('YYYY-MM-DD')} to ${moment(end).format('YYYY-MM-DD')}` : 'All Time'}`, startX + 15, currentY + 35);
-
-      currentY += 80;
-
-      // Table headers
-      const headers = ['Timestamp', 'Type', 'Action', 'Status', 'Details'];
-      const colWidths = [
-        reportWidth * 0.20, // Timestamp
-        reportWidth * 0.15, // Type
-        reportWidth * 0.20, // Action
-        reportWidth * 0.15, // Status
-        reportWidth * 0.30  // Details
-      ];
-
-      // Draw table header
-      doc.fillColor('#1a4e1a')
-         .rect(startX, currentY, reportWidth, 20)
-         .fill();
-
-      let xPos = startX;
-      headers.forEach((header, i) => {
-        doc.fillColor('#ffffff')
-           .font('Helvetica-Bold')
-           .fontSize(10)
-           .text(header, xPos + 5, currentY + 5, {
-             width: colWidths[i],
-             align: 'left'
-           });
-        xPos += colWidths[i];
-      });
-
-      currentY += 20;
-
-      // Draw table rows
-      logs.forEach((log, index) => {
-        // Check if we need a new page
-        if (currentY > doc.page.height - 50) {
-          doc.addPage();
-          currentY = 50;
-          
-          // Redraw header on new page
-          doc.fillColor('#1a4e1a')
-             .rect(startX, currentY, reportWidth, 20)
-             .fill();
-
-          xPos = startX;
-          headers.forEach((header, i) => {
-            doc.fillColor('#ffffff')
-               .font('Helvetica-Bold')
-               .fontSize(10)
-               .text(header, xPos + 5, currentY + 5, {
-               width: colWidths[i],
-               align: 'left'
-            });
-            xPos += colWidths[i];
-          });
-          currentY += 20;
-        }
-
-        // Alternate row colors
-        if (index % 2 === 0) {
-          doc.fillColor('#f9f9f9')
-             .rect(startX, currentY, reportWidth, 20)
-             .fill();
-        }
-
-        // Draw row data
-        xPos = startX;
-        [
-          moment(log.timestamp).format('YYYY-MM-DD HH:mm'),
-          log.type || '-',
-          log.action || '-',
-          log.status || '-',
-          log.details || '-'
-        ].forEach((text, i) => {
-          doc.fillColor('#000000')
-             .font('Helvetica')
-             .fontSize(9)
-             .text(text, xPos + 5, currentY + 5, {
-               width: colWidths[i] - 10,
-               align: 'left',
-               lineBreak: false
-             });
-          xPos += colWidths[i];
-        });
-
-        currentY += 20;
-      });
-
-      // Add footer
-      drawPageFooter(doc, moment().tz('Asia/Manila').format('YYYY-MM-DD HH:mm:ss'));
-
+      let currentY = drawEnhancedAuditHeader(doc, 1);
+      currentY = drawAuditSummarySection(doc, currentY, logs, plantId, start, end, type);
+      currentY = drawAuditLogsTable(doc, currentY, logs);
+      
+      drawEnhancedFooter(doc);
       doc.end();
       return;
     }
@@ -1049,6 +949,544 @@ app.get("/api/audit-logs/export", async (req, res) => {
     }
   }
 });
+
+// Enhanced helper functions for better PDF design
+function drawEnhancedAuditHeader(doc, pageNumber) {
+  const pageWidth = doc.page.width;
+  const headerHeight = 120;
+  
+  // Modern gradient-like header background
+  doc.rect(0, 0, pageWidth, headerHeight)
+     .fillColor('#2c5530')
+     .fill();
+  
+  // Add subtle pattern overlay
+  doc.rect(0, 0, pageWidth, headerHeight)
+     .fillColor('#34633a')
+     .fillOpacity(0.3)
+     .fill();
+  
+  // Reset opacity
+  doc.fillOpacity(1);
+  
+  // Company logo area (circular background)
+  const logoX = 60;
+  const logoY = 30;
+  const logoRadius = 25;
+  
+  doc.circle(logoX, logoY, logoRadius)
+     .fillColor('#ffffff')
+     .fillOpacity(0.15)
+     .fill()
+     .fillOpacity(1);
+  
+  // Logo text/icon - Using text instead of emoji
+  doc.fontSize(16)
+     .fillColor('#ffffff')
+     .font('Helvetica-Bold')
+     .text('PM', logoX - 8, logoY - 8);
+  
+  // Main title
+  doc.fontSize(28)
+     .fillColor('#ffffff')
+     .font('Helvetica-Bold')
+     .text('AUDIT LOGS REPORT', 120, 25);
+  
+  // Subtitle with modern styling
+  doc.fontSize(14)
+     .fillColor('#e8f5e8')
+     .font('Helvetica')
+     .text('Plant Monitoring System • Activity Tracking', 120, 60);
+  
+  // Page indicator with modern design
+  const pageIndicatorX = pageWidth - 120;
+  doc.rect(pageIndicatorX, 25, 80, 25)
+     .fillColor('#ffffff')
+     .fillOpacity(0.1)
+     .fill()
+     .fillOpacity(1)
+     .strokeColor('#ffffff')
+     .strokeOpacity(0.3)
+     .lineWidth(1)
+     .stroke();
+  
+  doc.fontSize(12)
+     .fillColor('#ffffff')
+     .font('Helvetica-Bold')
+     .text(`Page ${pageNumber}`, pageIndicatorX, 32, { 
+       width: 80, 
+       align: 'center' 
+     });
+  
+  // Bottom border line with gradient effect
+  doc.moveTo(0, headerHeight)
+     .lineTo(pageWidth, headerHeight)
+     .strokeColor('#1a4d1f')
+     .lineWidth(3)
+     .stroke();
+  
+  return headerHeight + 30;
+}
+
+function drawAuditSummarySection(doc, startY, logs, plantId, start, end, type) {
+  const sectionWidth = doc.page.width - 80;
+  const sectionX = 40;
+  let currentY = startY;
+  
+  // Section title
+  doc.fontSize(18)
+     .fillColor('#2c5530')
+     .font('Helvetica-Bold')
+     .text('Report Summary', sectionX, currentY);
+  
+  currentY += 35;
+  
+  // Summary cards container
+  const cardHeight = 80;
+  const cardWidth = (sectionWidth - 30) / 3;
+  
+  // Card 1: Total Logs
+  drawSummaryCard(doc, sectionX, currentY, cardWidth, cardHeight, 
+    'Total Logs', logs.length.toString(), '#4CAF50', 'LOGS');
+  
+  // Card 2: Date Range
+  const dateRange = start && end ? 
+    `${moment(start).format('MMM DD')} - ${moment(end).format('MMM DD, YYYY')}` : 
+    'All Time';
+  drawSummaryCard(doc, sectionX + cardWidth + 15, currentY, cardWidth, cardHeight,
+    'Date Range', dateRange, '#2196F3', 'DATE');
+  
+  // Card 3: Plant/Type Info
+  const filterInfo = plantId ? `Plant ${plantId}` : (type ? type.toUpperCase() : 'All Types');
+  drawSummaryCard(doc, sectionX + (cardWidth + 15) * 2, currentY, cardWidth, cardHeight,
+    'Filter', filterInfo, '#FF9800', 'FILTER');
+  
+  currentY += cardHeight + 30;
+  
+  // Activity breakdown if we have logs
+  if (logs.length > 0) {
+    currentY = drawActivityBreakdown(doc, sectionX, currentY, sectionWidth, logs);
+  }
+  
+  return currentY + 20;
+}
+
+function drawSummaryCard(doc, x, y, width, height, title, value, color, icon) {
+  // Card shadow
+  doc.rect(x + 2, y + 2, width, height)
+     .fillColor('#000000')
+     .fillOpacity(0.1)
+     .fill()
+     .fillOpacity(1);
+  
+  // Card background
+  doc.rect(x, y, width, height)
+     .fillColor('#ffffff')
+     .fill()
+     .strokeColor('#e0e0e0')
+     .lineWidth(1)
+     .stroke();
+  
+  // Colored top border
+  doc.rect(x, y, width, 4)
+     .fillColor(color)
+     .fill();
+  
+  // Icon background
+  const iconSize = 30;
+  const iconX = x + 15;
+  const iconY = y + 15;
+  
+  doc.circle(iconX + iconSize/2, iconY + iconSize/2, iconSize/2)
+     .fillColor(color)
+     .fillOpacity(0.1)
+     .fill()
+     .fillOpacity(1);
+  
+  // Icon
+  doc.fontSize(9)
+     .fillColor(color)
+     .font('Helvetica-Bold')
+     .text(icon, iconX + 5, iconY + 12);
+  
+  // Title
+  doc.fontSize(10)
+     .fillColor('#666666')
+     .font('Helvetica')
+     .text(title.toUpperCase(), iconX + iconSize + 10, iconY + 5);
+  
+  // Value
+  doc.fontSize(16)
+     .fillColor('#333333')
+     .font('Helvetica-Bold')
+     .text(value, iconX + iconSize + 10, iconY + 20, {
+       width: width - iconSize - 40,
+       lineBreak: false
+     });
+}
+
+function drawActivityBreakdown(doc, x, y, width, logs) {
+  // Count activities by type and status
+  const breakdown = logs.reduce((acc, log) => {
+    const key = `${log.type}-${log.status}`;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  
+  // Activity breakdown title
+  doc.fontSize(14)
+     .fillColor('#2c5530')
+     .font('Helvetica-Bold')
+     .text('Activity Breakdown', x, y);
+  
+  y += 25;
+  
+  // Create breakdown bars
+  const maxCount = Math.max(...Object.values(breakdown));
+  const barHeight = 20;
+  const barSpacing = 25;
+  
+  Object.entries(breakdown).forEach(([key, count], index) => {
+    const [type, status] = key.split('-');
+    const barWidth = (count / maxCount) * (width * 0.6);
+    const barY = y + (index * barSpacing);
+    
+    // Status color
+    const statusColor = getStatusColor(status);
+    
+    // Bar background
+    doc.rect(x, barY, width * 0.6, barHeight)
+       .fillColor('#f5f5f5')
+       .fill();
+    
+    // Bar fill
+    doc.rect(x, barY, barWidth, barHeight)
+       .fillColor(statusColor)
+       .fillOpacity(0.8)
+       .fill()
+       .fillOpacity(1);
+    
+    // Label
+    doc.fontSize(10)
+       .fillColor('#333333')
+       .font('Helvetica')
+       .text(`${type.toUpperCase()} (${status})`, x + width * 0.65, barY + 6);
+    
+    // Count
+    doc.fontSize(10)
+       .fillColor('#666666')
+       .font('Helvetica-Bold')
+       .text(count.toString(), x + width * 0.85, barY + 6);
+  });
+  
+  return y + (Object.keys(breakdown).length * barSpacing) + 20;
+}
+
+function getStatusColor(status) {
+  const colors = {
+    'success': '#4CAF50',
+    'failed': '#f44336',
+    'warning': '#FF9800',
+    'info': '#2196F3'
+  };
+  return colors[status] || '#9E9E9E';
+}
+
+function drawAuditLogsTable(doc, startY, logs) {
+  let currentY = startY;
+  const pageWidth = doc.page.width;
+  const tableX = 40;
+  const tableWidth = pageWidth - 80;
+  
+  // Table title
+  doc.fontSize(18)
+     .fillColor('#2c5530')
+     .font('Helvetica-Bold')
+     .text('Detailed Activity Log', tableX, currentY);
+  
+  currentY += 35;
+  
+  // If no logs, show message
+  if (logs.length === 0) {
+    doc.rect(tableX, currentY, tableWidth, 60)
+       .fillColor('#f8f9fa')
+       .fill()
+       .strokeColor('#dee2e6')
+       .lineWidth(1)
+       .stroke();
+    
+    doc.fontSize(14)
+       .fillColor('#6c757d')
+       .font('Helvetica')
+       .text('No audit logs found for the selected criteria.', 
+             tableX, currentY + 20, { 
+               width: tableWidth, 
+               align: 'center' 
+             });
+    
+    return currentY + 60;
+  }
+  
+  // Enhanced table headers
+  const headers = ['Timestamp', 'Type', 'Action', 'Status', 'Details', 'Data'];
+  const colWidths = [
+    tableWidth * 0.18, // Timestamp
+    tableWidth * 0.12, // Type  
+    tableWidth * 0.12, // Action
+    tableWidth * 0.10, // Status
+    tableWidth * 0.28, // Details
+    tableWidth * 0.20  // Data
+  ];
+  
+  currentY = drawEnhancedTableHeader(doc, headers, colWidths, tableX, currentY, tableWidth);
+  
+  // Table rows with enhanced styling
+  logs.forEach((log, index) => {
+    // Check for page break
+    if (currentY > doc.page.height - 100) {
+      doc.addPage();
+      currentY = 60;
+      currentY = drawEnhancedTableHeader(doc, headers, colWidths, tableX, currentY, tableWidth);
+    }
+    
+    currentY = drawEnhancedTableRow(doc, log, colWidths, tableX, currentY, tableWidth, index);
+  });
+  
+  return currentY;
+}
+
+function drawEnhancedTableHeader(doc, headers, colWidths, x, y, width) {
+  const headerHeight = 35;
+  
+  // Header background with gradient effect
+  doc.rect(x, y, width, headerHeight)
+     .fillColor('#2c5530')
+     .fill();
+  
+  // Add subtle highlight
+  doc.rect(x, y, width, 3)
+     .fillColor('#4CAF50')
+     .fill();
+  
+  // Header text
+  let currentX = x;
+  headers.forEach((header, i) => {
+    // Column separator line (except for first column)
+    if (i > 0) {
+      doc.moveTo(currentX, y)
+         .lineTo(currentX, y + headerHeight)
+         .strokeColor('#ffffff')
+         .strokeOpacity(0.2)
+         .lineWidth(1)
+         .stroke()
+         .strokeOpacity(1);
+    }
+    
+    doc.fillColor('#ffffff')
+       .font('Helvetica-Bold')
+       .fontSize(11)
+       .text(header.toUpperCase(), 
+             currentX + 8, 
+             y + 12, 
+             { 
+               width: colWidths[i] - 16, 
+               align: 'left',
+               lineBreak: false
+             });
+    
+    currentX += colWidths[i];
+  });
+  
+  return y + headerHeight;
+}
+
+function drawEnhancedTableRow(doc, log, colWidths, x, y, width, index) {
+  const baseRowHeight = 45;
+  const detailsText = log.details || '-';
+  const sensorDataText = log.sensorData ? formatEnhancedSensorData(log.sensorData) : '-';
+  
+  // Calculate dynamic row height based on content
+  const detailsHeight = estimateEnhancedTextHeight(detailsText, colWidths[4] - 16, doc);
+  const dataHeight = estimateEnhancedTextHeight(sensorDataText, colWidths[5] - 16, doc);
+  const rowHeight = Math.max(baseRowHeight, detailsHeight + 20, dataHeight + 20);
+  
+  // Alternating row colors with subtle styling
+  const bgColor = index % 2 === 0 ? '#ffffff' : '#f8f9fa';
+  doc.rect(x, y, width, rowHeight)
+     .fillColor(bgColor)
+     .fill();
+  
+  // Row border
+  doc.rect(x, y, width, rowHeight)
+     .strokeColor('#e9ecef')
+     .lineWidth(0.5)
+     .stroke();
+  
+  // Status indicator (colored left border)
+  const statusColor = getStatusColor(log.status);
+  doc.rect(x, y, 4, rowHeight)
+     .fillColor(statusColor)
+     .fill();
+  
+  // Cell data
+  const cellData = [
+    moment(log.timestamp).format('MMM DD\nHH:mm'),
+    (log.type || '-').toUpperCase(),
+    (log.action || '-').toUpperCase(),
+    log.status || '-',
+    detailsText,
+    sensorDataText
+  ];
+  
+  // Draw cell content
+  let currentX = x;
+  cellData.forEach((text, i) => {
+    // Column separator
+    if (i > 0) {
+      doc.moveTo(currentX, y)
+         .lineTo(currentX, y + rowHeight)
+         .strokeColor('#e9ecef')
+         .lineWidth(0.5)
+         .stroke();
+    }
+    
+    // Status badge styling for status column
+    if (i === 3 && text !== '-') {
+      drawStatusBadge(doc, currentX + 8, y + 12, text, statusColor);
+    } else {
+      // Regular text
+      const fontSize = i === 0 ? 9 : (i === 4 || i === 5 ? 8 : 10);
+      const fontWeight = (i === 1 || i === 2) ? 'Helvetica-Bold' : 'Helvetica';
+      
+      doc.fillColor('#333333')
+         .font(fontWeight)
+         .fontSize(fontSize)
+         .text(text, 
+               currentX + 8, 
+               y + 10, 
+               { 
+                 width: colWidths[i] - 16, 
+                 align: 'left',
+                 lineBreak: true,
+                 height: rowHeight - 20
+               });
+    }
+    
+    currentX += colWidths[i];
+  });
+  
+  return y + rowHeight;
+}
+
+function drawStatusBadge(doc, x, y, status, color) {
+  const badgeWidth = 60;
+  const badgeHeight = 18;
+  
+  // Badge background
+  doc.rect(x, y, badgeWidth, badgeHeight)
+     .fillColor(color)
+     .fillOpacity(0.1)
+     .fill()
+     .strokeColor(color)
+     .strokeOpacity(0.3)
+     .lineWidth(1)
+     .stroke()
+     .fillOpacity(1)
+     .strokeOpacity(1);
+  
+  // Badge text
+  doc.fillColor(color)
+     .font('Helvetica-Bold')
+     .fontSize(9)
+     .text(status.toUpperCase(), x, y + 5, {
+       width: badgeWidth,
+       align: 'center'
+     });
+}
+
+function formatEnhancedSensorData(sensorData) {
+  if (!sensorData) return '-';
+  
+  const items = [];
+  if (sensorData.moisture !== undefined) items.push(`Moisture: ${sensorData.moisture}%`);
+  if (sensorData.temperature !== undefined) items.push(`Temp: ${sensorData.temperature}C`);
+  if (sensorData.humidity !== undefined) items.push(`Humidity: ${sensorData.humidity}%`);
+  if (sensorData.moistureStatus) items.push(`Status: ${sensorData.moistureStatus}`);
+  if (sensorData.waterState !== undefined) items.push(`Water: ${sensorData.waterState ? 'ON' : 'OFF'}`);
+  if (sensorData.fertilizerState !== undefined) items.push(`Fertilizer: ${sensorData.fertilizerState ? 'ON' : 'OFF'}`);
+  
+  return items.join('\n');
+}
+
+function estimateEnhancedTextHeight(text, maxWidth, doc) {
+  const fontSize = 8;
+  const lineHeight = fontSize * 1.4;
+  
+  if (!text || text === '-') return lineHeight;
+  
+  const lines = text.split('\n');
+  let totalLines = 0;
+  
+  lines.forEach(line => {
+    const words = line.split(' ');
+    let currentLine = '';
+    let lineCount = 1;
+    
+    words.forEach(word => {
+      const testLine = currentLine + word + ' ';
+      const width = doc.widthOfString(testLine, { fontSize });
+      
+      if (width > maxWidth) {
+        currentLine = word + ' ';
+        lineCount++;
+      } else {
+        currentLine = testLine;
+      }
+    });
+    
+    totalLines += lineCount;
+  });
+  
+  return totalLines * lineHeight;
+}
+
+function drawEnhancedFooter(doc) {
+  const pageWidth = doc.page.width;
+  const footerY = doc.page.height - 60;
+  const timestamp = moment().tz('Asia/Manila').format('YYYY-MM-DD HH:mm:ss');
+  
+  // Footer background
+  doc.rect(0, footerY - 10, pageWidth, 70)
+     .fillColor('#f8f9fa')
+     .fill();
+  
+  // Top border
+  doc.moveTo(0, footerY - 10)
+     .lineTo(pageWidth, footerY - 10)
+     .strokeColor('#2c5530')
+     .lineWidth(2)
+     .stroke();
+  
+  // Footer content
+  doc.fontSize(9)
+     .fillColor('#666666')
+     .font('Helvetica');
+  
+  // Left: Generation time
+  doc.text(`Generated on ${timestamp}`, 40, footerY + 5);
+  
+  // Center: Company/system name
+  doc.text('Plant Monitoring System', pageWidth / 2 - 60, footerY + 5);
+  
+  // Right: Confidentiality notice
+  doc.text('Confidential Report', pageWidth - 140, footerY + 5);
+  
+  // Bottom line with contact info
+  doc.fontSize(8)
+     .fillColor('#999999')
+     .text('For questions about this report, contact your system administrator', 
+           40, footerY + 25, { width: pageWidth - 80, align: 'center' });
+}
 
 // Get audit log types
 app.get("/api/audit-logs/types", async (req, res) => {
@@ -1117,36 +1555,66 @@ function sanitizeAuditLog(log) {
 
 // Helper function to validate schedule data
 function validateScheduleData(data) {
-  const { plantId, type, time, days, duration, enabled, label } = data;
-  
-  if (!plantId) return 'Plant ID is required';
-  if (!type || !['watering', 'fertilizing'].includes(type)) return 'Valid type (watering or fertilizing) is required';
-  if (!time || !time.match(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)) return 'Valid time in HH:MM format is required';
-  if (!days || !Array.isArray(days) || days.length === 0) return 'At least one day of the week is required';
-  if (!duration || duration < 1 || duration > 60) return 'Duration must be between 1 and 60 minutes';
-  // Label is optional, no validation needed
-  
-  return null; // No validation errors
+  if (!data) return 'Schedule data is required';
+  if (!data.plantId) return 'Plant ID is required';
+  if (!data.type || !['watering', 'fertilizing'].includes(data.type)) return 'Valid type (watering or fertilizing) is required';
+  if (!data.time || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(data.time)) return 'Valid time in HH:MM format is required';
+  if (!Array.isArray(data.days) || data.days.length === 0) return 'At least one day of the week is required';
+  if (typeof data.duration !== 'number' || data.duration <= 0) return 'Duration must be greater than 0';
+  return null;
 }
 
 // Create a new schedule
 app.post('/api/schedules', async (req, res) => {
   try {
+    console.log('Received schedule data:', req.body);
+    const validationError = validateScheduleData(req.body);
+    if (validationError) {
+      return res.status(400).json({ 
+        success: false, 
+        error: validationError 
+      });
+    }
+
     const collection = await getCollection('schedules');
     const scheduleData = {
       ...req.body,
-      createdAt: new Date()
+      enabled: req.body.enabled ?? true,
+      createdAt: moment().tz('Asia/Manila').toDate(),
+      updatedAt: moment().tz('Asia/Manila').toDate()
     };
     
     const result = await collection.insertOne(scheduleData);
+    const insertedSchedule = {
+      ...scheduleData,
+      _id: result.insertedId,
+      id: result.insertedId.toString()
+    };
+
+    // Create audit log entry
+    const auditCollection = await getCollection('audit_logs');
+    await auditCollection.insertOne({
+      plantId: scheduleData.plantId,
+      type: 'schedule',
+      action: 'create',
+      status: 'success',
+      timestamp: moment().tz('Asia/Manila').toDate(),
+      details: `Created ${scheduleData.type} schedule`,
+      scheduleData: scheduleData
+    });
+
+    console.log('Schedule created successfully:', insertedSchedule);
     res.status(201).json({ 
       success: true, 
-      id: result.insertedId,
-      schedule: scheduleData 
+      schedule: insertedSchedule
     });
   } catch (error) {
     console.error('❌ Error creating schedule:', error);
-    res.status(500).json({ error: 'Failed to create schedule' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to create schedule',
+      details: error.message 
+    });
   }
 });
 
@@ -1231,3 +1699,42 @@ app.delete('/api/schedules/:scheduleId', async (req, res) => {
 app.listen(port, () => {
   console.log(`✅ Server started at http://localhost:${port}`);
 });
+
+// Add these helper functions for the PDF export
+function formatSensorData(sensorData) {
+  if (!sensorData) return '-';
+  
+  const lines = [];
+  if (sensorData.moisture !== undefined) lines.push(`Moisture: ${sensorData.moisture}%`);
+  if (sensorData.temperature !== undefined) lines.push(`Temp: ${sensorData.temperature}°C`);
+  if (sensorData.humidity !== undefined) lines.push(`Humidity: ${sensorData.humidity}%`);
+  if (sensorData.moistureStatus) lines.push(`Status: ${sensorData.moistureStatus}`);
+  if (sensorData.waterState !== undefined) lines.push(`Water: ${sensorData.waterState ? 'ON' : 'OFF'}`);
+  if (sensorData.fertilizerState !== undefined) lines.push(`Fertilizer: ${sensorData.fertilizerState ? 'ON' : 'OFF'}`);
+  
+  return lines.join('\n');
+}
+
+function estimateTextHeight(text, doc) {
+  const fontSize = 9;
+  const lineHeight = fontSize * 1.2;
+  const maxWidth = 150; // Adjust based on your column width
+  
+  const words = text.split(' ');
+  let currentLine = '';
+  let lines = 1;
+  
+  for (const word of words) {
+    const testLine = currentLine + word + ' ';
+    const width = doc.widthOfString(testLine);
+    
+    if (width > maxWidth) {
+      currentLine = word + ' ';
+      lines++;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  
+  return lines * lineHeight;
+}
