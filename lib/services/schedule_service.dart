@@ -5,7 +5,7 @@ import 'package:prototype/models/schedule.dart';
 import '../services/audit_service.dart';
 
 class ScheduleService {
-  static const String baseUrl = 'https://server-5527.onrender.com/api';
+  static const String baseUrl = 'https://server-ydsa.onrender.com/api';
   static const String backupUrl = 'http://192.168.1.8:3000/api';
 
   final AuditService _auditService = AuditService();
