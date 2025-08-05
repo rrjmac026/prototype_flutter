@@ -4,13 +4,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:prototype/providers/theme_provider.dart';
 import 'package:prototype/providers/settings_provider.dart';
 import 'package:prototype/providers/user_provider.dart';
-import 'package:prototype/providers/plant_data_provider.dart'; // Add this
-import 'package:prototype/models/plant_data.dart'; // Add this
 import 'dart:io';
 import 'dart:async'; // Add this for Timer
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:prototype/services/api_service.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart'; // Add this for DateFormat
 import 'package:path_provider/path_provider.dart'; // Add this for temporary directory
 import 'package:url_launcher/url_launcher.dart'; // Add this for launching URLs
@@ -23,15 +20,13 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
-    with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen> {
   String _selectedLanguage = 'English';
   bool _notificationsEnabled = true;
   String _username = 'Jam Mac';
   String _bio = 'Plant Enthusiast';
   File? _profileImage;
   String? _profileImagePath; // Add this line
-  late TabController _tabController;
   List<Map<String, dynamic>> _alerts = [];
   Timer? _alertsTimer; // Add this
   DateTimeRange? _selectedDateRange; // Add this
@@ -39,16 +34,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController =
-        TabController(length: 2, vsync: this); // Changed from 3 to 2
     _loadProfileData();
   }
-
-  // Remove _startRealtimeUpdates() and _updateReadings() methods
-
-  // Update any widget that uses _recentReadings to use this instead:
-  List<PlantData> get _recentReadings =>
-      Provider.of<PlantDataProvider>(context, listen: false).historicalReadings;
 
   Future<void> _loadProfileData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -330,26 +317,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
           SliverFillRemaining(
-            child: Column(
-              children: [
-                TabBar(
-                  controller: _tabController,
-                  tabs: const [
-                    Tab(text: 'Overview'),
-                    Tab(text: 'Readings'),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      SingleChildScrollView(child: _buildOverviewTab()),
-                      SingleChildScrollView(child: _buildReadingsTab()),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+            child: SingleChildScrollView(child: _buildOverviewTab()),
           ),
         ],
       ),
@@ -492,49 +460,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildReadingsTab() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Consumer<PlantDataProvider>(
-        builder: (context, provider, child) {
-          return Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Sensor Readings',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: () {
-                      provider.refreshData();
-                    },
-                  ),
-                ],
-              ),
-              if (provider.latestData != null) ...[
-                _buildReadingsChart(),
-                const SizedBox(height: 16),
-                ..._buildReadingsList(),
-              ] else
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildStatCard(String title, String value) {
     return Card(
       child: Padding(
@@ -556,180 +481,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  List<Widget> _buildReadingsList() {
-    return _recentReadings.map((reading) {
-      return Card(
-        child: ListTile(
-          title: Text(
-              'Moisture: ${reading.soilMoisture.toStringAsFixed(0)} (${_getMoistureStatus(reading.soilMoisture)})'),
-          subtitle: Text(
-            'Temperature: ${reading.temperature}°C | Humidity: ${reading.humidity}%',
-          ),
-          trailing: Text(
-            TimeOfDay.fromDateTime(reading.timestamp).format(context),
-          ),
-        ),
-      );
-    }).toList();
-  }
-
-  Widget _buildReadingsChart() {
-    if (_recentReadings.isEmpty) return const SizedBox.shrink();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Soil Moisture Readings',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildLegendItem('Raw Value (0-1023)', Colors.blue),
-                  const SizedBox(width: 16),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      _buildStatusLegendItem('Error >1000', Colors.red),
-                      _buildStatusLegendItem('Dry >600', Colors.orange),
-                      _buildStatusLegendItem('Humid >370', Colors.blue),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 200,
-              child: LineChart(
-                LineChartData(
-                  gridData: const FlGridData(
-                    show: true,
-                    horizontalInterval: 100,
-                  ),
-                  titlesData: FlTitlesData(
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: 200,
-                        getTitlesWidget: (value, meta) {
-                          return Text(
-                            value.toInt().toString(),
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 10,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index < _recentReadings.length) {
-                            return Text(
-                              TimeOfDay.fromDateTime(
-                                      _recentReadings[index].timestamp)
-                                  .format(context),
-                              style: const TextStyle(fontSize: 8),
-                            );
-                          }
-                          return const Text('');
-                        },
-                      ),
-                    ),
-                  ),
-                  borderData: FlBorderData(show: true),
-                  minX: 0,
-                  maxX: (_recentReadings.length - 1).toDouble(),
-                  minY: 0,
-                  maxY: 1023,
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: _recentReadings
-                          .asMap()
-                          .entries
-                          .map((e) => FlSpot(
-                                e.key.toDouble(),
-                                e.value.soilMoisture,
-                              ))
-                          .toList(),
-                      isCurved: true,
-                      color: Colors.blue,
-                      dotData: const FlDotData(show: true),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: Colors.blue.withOpacity(0.1),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getMoistureStatus(num value) {
-    if (value >= 1000) return 'SENSOR ERROR';
-    if (value > 600) return 'DRY SOIL';
-    if (value >= 370) return 'HUMID SOIL';
-    return 'IN WATER';
-  }
-
-  Widget _buildLegendItem(String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface,
-            fontSize: 12,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatusLegendItem(String text, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.circle, color: color, size: 12),
-        const SizedBox(width: 4),
-        Text(text, style: const TextStyle(fontSize: 12)),
-      ],
-    );
-  }
-
   @override
   void dispose() {
     _alertsTimer?.cancel(); // Add this
-    _tabController.dispose();
     super.dispose();
   }
 

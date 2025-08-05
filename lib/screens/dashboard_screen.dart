@@ -7,6 +7,7 @@ import 'package:prototype/providers/user_provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:async';
 import 'package:prototype/providers/schedule_provider.dart'; // Add this import
+import 'package:prototype/widgets/animated_sensor_card.dart'; // Import the new AnimatedSensorCard widget
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -149,101 +150,113 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildMonitoringGrid(PlantData? data) {
-    final bool isOnline = data?.isOnline ?? false;
-    return Consumer<SettingsProvider>(
-      builder: (context, settings, child) {
-        return Column(
-          children: [
-            if (!isOnline)
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade300),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, color: Colors.red.shade700),
-                    const SizedBox(width: 8),
-                    Column(
+  final bool isOnline = data?.isOnline ?? false;
+  return Consumer<SettingsProvider>(
+    builder: (context, settings, child) {
+      return Column(
+        children: [
+          if (!isOnline)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           'Sensors Offline',
                           style: TextStyle(
                             color: Colors.red.shade700,
                             fontWeight: FontWeight.bold,
+                            fontSize: 14,
                           ),
                         ),
                         Text(
                           'Check sensor connections',
                           style: TextStyle(
-                            color: Colors.red.shade700,
+                            color: Colors.red.shade600,
                             fontSize: 12,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 6, // Reduced from 8
-              crossAxisSpacing: 6, // Reduced from 8
-              childAspectRatio: 1.6, // Increased from 1.4 to make cards shorter
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 2), // Reduced padding
-              children: [
-                _buildMonitoringCard(
-                  icon: Icons.water_drop,
-                  title: 'Soil Moisture',
-                  value: isOnline
-                      ? '${data?.soilMoisture.toStringAsFixed(1)}%'
-                      : 'N/A',
-                  color: isOnline
-                      ? _getMoistureColor(data?.soilMoisture ?? 0)
-                      : Colors.grey,
-                ),
-                _buildMonitoringCard(
-                  icon: Icons.thermostat,
-                  title: settings.getLocalizedText('Temperature'),
-                  value: data != null
-                      ? settings.formatTemperature(data.temperature)
-                      : 'N/A',
-                  color: Colors.orange,
-                ),
-                _buildMonitoringCard(
-                  icon: Icons.water,
-                  title: 'Humidity',
-                  value: data != null
-                      ? '${data.humidity.toStringAsFixed(1)}%'
-                      : 'N/A',
-                  color: Colors.green,
-                ),
-                // Update this section to use the same moisture status logic
-                _buildMonitoringCard(
-                  icon: Icons.warning_rounded,
-                  title: 'Status',
-                  value: data != null
-                      ? _getMoistureStatus(data.soilMoisture)
-                      : 'NO_DATA',
-                  color: data != null
-                      ? _getMoistureColor(data.soilMoisture)
-                      : Colors.grey,
-                ),
-              ],
             ),
-          ],
-        );
-      },
-    );
-  }
+          
+          // Improved GridView with better constraints
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final screenWidth = constraints.maxWidth;
+              final cardWidth = (screenWidth - 32 - 12) / 2; // Account for padding and spacing
+              final cardHeight = cardWidth * 0.95; // Better aspect ratio - closer to square
+              
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                mainAxisSpacing: 12, // Increased spacing
+                crossAxisSpacing: 12, // Increased spacing
+                childAspectRatio: cardWidth / cardHeight,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                children: [
+                  AnimatedSensorCard(
+                    icon: Icons.water_drop,
+                    title: 'Soil Moisture',
+                    value: isOnline ? '${data?.soilMoisture.toStringAsFixed(1)}%' : 'N/A',
+                    color: isOnline ? _getMoistureColor(data?.soilMoisture ?? 0) : Colors.grey,
+                    isOnline: isOnline,
+                    type: 'moisture',
+                    percentage: data?.soilMoisture ?? 0,
+                  ),
+                  AnimatedSensorCard(
+                    icon: Icons.thermostat,
+                    title: settings.getLocalizedText('Temperature'),
+                    value: data != null ? settings.formatTemperature(data.temperature) : 'N/A',
+                    color: isOnline ? Colors.orange.shade600 : Colors.grey,
+                    isOnline: isOnline,
+                    type: 'temperature',
+                    percentage: data?.temperature ?? 0,
+                  ),
+                  AnimatedSensorCard(
+                    icon: Icons.opacity,
+                    title: 'Humidity',
+                    value: data != null ? '${data.humidity.toStringAsFixed(1)}%' : 'N/A',
+                    color: isOnline ? Colors.blue.shade600 : Colors.grey,
+                    isOnline: isOnline,
+                    type: 'humidity',
+                    percentage: data?.humidity ?? 0,
+                  ),
+                  AnimatedSensorCard(
+                    icon: Icons.eco,
+                    title: 'Plant Status',
+                    value: data != null ? _getMoistureStatus(data.soilMoisture) : 'NO_DATA',
+                    color: data != null && isOnline ? _getMoistureColor(data.soilMoisture) : Colors.grey,
+                    isOnline: isOnline,
+                    type: 'status',
+                    percentage: data?.soilMoisture ?? 0,
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
 
   // Add this helper method for status colors
   Color _getStatusColor(String? status) {
@@ -821,3 +834,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
+
