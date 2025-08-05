@@ -50,14 +50,44 @@ class ScheduleService {
   }
 
   // Create a new schedule
+  // Create a new schedule
   Future<Schedule?> createSchedule(Schedule schedule) async {
     try {
       final endpoints = ['$baseUrl/schedules', '$backupUrl/schedules'];
       final scheduleData = schedule.toJson();
-      debugPrint('Creating schedule with data: $scheduleData');
+
+      // DEBUG: Print the schedule data being sent
+      debugPrint('🔍 Schedule type: ${scheduleData['type']}');
+      debugPrint('🔍 Schedule data being sent: ${json.encode(scheduleData)}');
+
+      // Validate schedule data based on type
+      if (scheduleData['type'] == 'fertilizing') {
+        debugPrint('🔍 Validating fertilizing schedule...');
+        debugPrint('🔍 calendarDays: ${scheduleData['calendarDays']}');
+        debugPrint('🔍 calendarDays type: ${scheduleData['calendarDays'].runtimeType}');
+        
+        if (scheduleData['calendarDays'] == null ||
+            (scheduleData['calendarDays'] as List).isEmpty) {
+          throw Exception('Fertilizing schedule must specify calendar days');
+        }
+        scheduleData['days'] = []; // Clear days array
+        debugPrint('🔍 Cleared days array for fertilizing schedule');
+      } else {
+        debugPrint('🔍 Validating watering schedule...');
+        if (scheduleData['days'] == null ||
+            (scheduleData['days'] as List).isEmpty) {
+          throw Exception('Watering schedule must specify days');
+        }
+        scheduleData['calendarDays'] = []; // Clear calendarDays
+        debugPrint('🔍 Cleared calendarDays for watering schedule');
+      }
+
+      debugPrint('🔍 Final schedule data: ${json.encode(scheduleData)}');
 
       for (final endpoint in endpoints) {
         try {
+          debugPrint('🔍 Trying endpoint: $endpoint');
+          
           final response = await http
               .post(
                 Uri.parse(endpoint),
@@ -67,10 +97,10 @@ class ScheduleService {
                 },
                 body: json.encode(scheduleData),
               )
-              .timeout(const Duration(seconds: 30)); // Increased timeout
+              .timeout(const Duration(seconds: 30));
 
-          debugPrint('Server response status: ${response.statusCode}');
-          debugPrint('Server response body: ${response.body}');
+          debugPrint('🔍 Server response status: ${response.statusCode}');
+          debugPrint('🔍 Server response body: ${response.body}');
 
           if (response.statusCode == 201) {
             final data = json.decode(response.body);
@@ -89,15 +119,17 @@ class ScheduleService {
                 'id': scheduleId,
               });
             }
+          } else {
+            debugPrint('❌ Server error: ${response.statusCode} - ${response.body}');
           }
         } catch (e) {
-          debugPrint('Error with endpoint $endpoint: $e');
+          debugPrint('❌ Error with endpoint $endpoint: $e');
           continue;
         }
       }
       throw Exception('Failed to create schedule: Server error');
     } catch (e) {
-      debugPrint('Error creating schedule: $e');
+      debugPrint('❌ Error creating schedule: $e');
       rethrow;
     }
   }
@@ -106,6 +138,20 @@ class ScheduleService {
   Future<bool> updateSchedule(
       String scheduleId, Map<String, dynamic> data) async {
     try {
+      // Validate update data based on schedule type
+      if (data['type'] == 'fertilizing') {
+        if (data['calendarDays'] == null ||
+            (data['calendarDays'] as List).isEmpty) {
+          throw Exception('Fertilizing schedule must specify calendar days');
+        }
+        data['days'] = []; // Clear days array
+      } else if (data.containsKey('days')) {
+        if (data['days'] == null || (data['days'] as List).isEmpty) {
+          throw Exception('Watering schedule must specify days');
+        }
+        data['calendarDays'] = []; // Clear calendarDays
+      }
+
       final endpoints = [
         '$baseUrl/schedules/$scheduleId',
         '$backupUrl/schedules/$scheduleId'
@@ -178,6 +224,66 @@ class ScheduleService {
     } catch (e) {
       debugPrint('Error deleting schedule: $e');
       return false;
+    }
+  }
+
+  // Execute a schedule
+  Future<bool> executeSchedule(String scheduleId) async {
+    try {
+      final endpoints = [
+        '$baseUrl/schedules/$scheduleId/execute',
+        '$backupUrl/schedules/$scheduleId/execute'
+      ];
+
+      for (final endpoint in endpoints) {
+        try {
+          final response = await http.post(
+            Uri.parse(endpoint),
+            headers: {'Accept': 'application/json'},
+          ).timeout(const Duration(seconds: 30));
+
+          if (response.statusCode == 200) {
+            return true;
+          }
+        } catch (e) {
+          debugPrint('Error with endpoint $endpoint: $e');
+          continue;
+        }
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error executing schedule: $e');
+      return false;
+    }
+  }
+
+  // Get schedule status
+  Future<Map<String, dynamic>> getScheduleStatus(String scheduleId) async {
+    try {
+      final endpoints = [
+        '$baseUrl/schedules/$scheduleId/status',
+        '$backupUrl/schedules/$scheduleId/status'
+      ];
+
+      for (final endpoint in endpoints) {
+        try {
+          final response = await http.get(
+            Uri.parse(endpoint),
+            headers: {'Accept': 'application/json'},
+          ).timeout(const Duration(seconds: 10));
+
+          if (response.statusCode == 200) {
+            return json.decode(response.body);
+          }
+        } catch (e) {
+          debugPrint('Error with endpoint $endpoint: $e');
+          continue;
+        }
+      }
+      throw Exception('Failed to get schedule status');
+    } catch (e) {
+      debugPrint('Error getting schedule status: $e');
+      rethrow;
     }
   }
 }

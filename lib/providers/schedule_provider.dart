@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:prototype/models/schedule.dart';
 import 'package:prototype/services/schedule_service.dart';
@@ -32,48 +33,88 @@ class ScheduleProvider with ChangeNotifier {
   }
 
   Future<void> fetchSchedules(String plantId, {bool? enabled}) async {
-    // Only show loading indicator if we don't have any schedules yet
-    final bool showLoading = _schedules.isEmpty;
-    if (showLoading) {
-      _isLoading = true;
-      notifyListeners();
-    }
-    _error = null;
-
-    try {
-      final schedules =
-          await _scheduleService.getSchedules(plantId, enabled: enabled);
-
-      // Only update if we got schedules back or if our current list is empty
-      if (schedules.isNotEmpty || _schedules.isEmpty) {
-        _schedules = schedules;
-        debugPrint('📅 Fetched ${schedules.length} schedules');
-      } else {
-        debugPrint('📅 Received empty schedules list, keeping existing data');
-      }
-
-      _isLoading = false;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('📅 Error fetching schedules: $e');
-      // Only set error if we don't have any schedules
-      if (_schedules.isEmpty) {
-        _error = 'Failed to load schedules: ${e.toString()}';
-      }
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> createSchedule(Schedule schedule) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Add timeout to match service layer
-      final newSchedule =
-          await _scheduleService.createSchedule(schedule).timeout(
+      final schedules =
+          await _scheduleService.getSchedules(plantId, enabled: enabled);
+      _schedules = schedules; // Always update with latest data
+      _error = null;
+      _isLoading = false;
+      debugPrint('📅 Fetched ${schedules.length} schedules');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('📅 Error fetching schedules: $e');
+      _schedules = []; // Clear schedules on error
+      _error = 'Failed to load schedules: ${e.toString()}';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> createSchedule(dynamic scheduleInput) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      // Convert input to proper format based on type
+      final Map<String, dynamic> scheduleData;
+      if (scheduleInput is Schedule) {
+        scheduleData = scheduleInput.toJson();
+      } else if (scheduleInput is Map<String, dynamic>) {
+        scheduleData = scheduleInput;
+      } else {
+        throw ArgumentError('Invalid schedule input type');
+      }
+
+      // Debug logging
+      debugPrint('🔍 Creating schedule with type: ${scheduleData['type']}');
+      debugPrint('🔍 Schedule data: ${json.encode(scheduleData)}');
+
+      // Validate and clean schedule data based on type
+      if (scheduleData['type'] == 'fertilizing') {
+        debugPrint('🔍 Processing fertilizing schedule...');
+
+        // Ensure calendarDays is properly set and days is empty
+        if (scheduleData['calendarDays'] == null ||
+            (scheduleData['calendarDays'] as List).isEmpty) {
+          throw ArgumentError('Fertilizing schedule must have calendar days');
+        }
+
+        // Ensure calendarDays are integers
+        scheduleData['calendarDays'] =
+            (scheduleData['calendarDays'] as List).map((day) {
+          if (day is int) return day;
+          if (day is String) return int.tryParse(day) ?? 1;
+          return 1;
+        }).toList();
+
+        scheduleData['days'] = []; // Must be empty for fertilizing
+
+        debugPrint(
+            '🔍 Fertilizing calendarDays: ${scheduleData['calendarDays']}');
+      } else {
+        debugPrint('🔍 Processing watering schedule...');
+
+        // For watering schedules, ensure days is set and calendarDays is empty
+        if (scheduleData['days'] == null ||
+            (scheduleData['days'] as List).isEmpty) {
+          throw ArgumentError('Watering schedule must have days');
+        }
+        scheduleData['calendarDays'] = []; // Must be empty for watering
+
+        debugPrint('🔍 Watering days: ${scheduleData['days']}');
+      }
+
+      debugPrint(
+          '🔍 Final schedule data before sending: ${json.encode(scheduleData)}');
+
+      final newSchedule = await _scheduleService
+          .createSchedule(Schedule.fromJson(scheduleData))
+          .timeout(
         const Duration(seconds: 15),
         onTimeout: () {
           throw TimeoutException(
@@ -85,22 +126,26 @@ class ScheduleProvider with ChangeNotifier {
         _schedules.add(newSchedule);
         _isLoading = false;
         notifyListeners();
+        debugPrint('✅ Schedule created successfully: ${newSchedule.id}');
         return true;
       } else {
         _error = 'Failed to create schedule: Server returned no data';
         _isLoading = false;
         notifyListeners();
+        debugPrint('❌ Schedule creation failed: No data returned');
         return false;
       }
     } on TimeoutException catch (e) {
       _error = e.message ?? 'Request timed out';
       _isLoading = false;
       notifyListeners();
+      debugPrint('❌ Schedule creation timed out: ${e.message}');
       return false;
     } catch (e) {
       _error = 'Failed to create schedule: ${e.toString()}';
       _isLoading = false;
       notifyListeners();
+      debugPrint('❌ Schedule creation error: $e');
       return false;
     }
   }
@@ -112,6 +157,20 @@ class ScheduleProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Validate schedule data based on type
+      if (data['type'] == 'fertilizing') {
+        data['days'] = []; // Clear days array for fertilizing schedules
+        if (data['calendarDays'] == null ||
+            (data['calendarDays'] as List).isEmpty) {
+          throw ArgumentError('Fertilizing schedule must have calendar days');
+        }
+      } else {
+        data['calendarDays'] = []; // Clear calendarDays for watering schedules
+        if (data['days'] == null || (data['days'] as List).isEmpty) {
+          throw ArgumentError('Watering schedule must have days');
+        }
+      }
+
       final success = await _scheduleService.updateSchedule(scheduleId, data);
       if (success) {
         // Update the local schedule
@@ -121,6 +180,9 @@ class ScheduleProvider with ChangeNotifier {
             type: data['type'],
             time: data['time'],
             days: data['days'] != null ? List<String>.from(data['days']) : null,
+            calendarDays: data['calendarDays'] != null
+                ? List<int>.from(data['calendarDays'])
+                : null, // FIX: Handle calendarDays
             duration: data['duration'],
             enabled: data['enabled'],
             label: data['label'],
