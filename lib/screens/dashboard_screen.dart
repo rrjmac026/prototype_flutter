@@ -6,6 +6,7 @@ import 'package:prototype/models/plant_data.dart';
 import 'package:prototype/providers/user_provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:async';
+import 'package:prototype/providers/schedule_provider.dart'; // Add this import
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -340,30 +341,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Watering Schedule',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Active Schedules',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: () {
+                    Provider.of<ScheduleProvider>(context, listen: false)
+                        .refreshSchedules(enabled: true);
+                  },
+                ),
+              ],
             ),
             const SizedBox(height: 16),
-            _buildScheduleItem('Morning', '7:00 AM'),
-            const SizedBox(height: 8),
-            _buildScheduleItem('Evening', '6:00 PM'),
+            Consumer<ScheduleProvider>(
+              builder: (context, provider, child) {
+                if (provider.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                // Filter only enabled schedules
+                final enabledSchedules = provider.schedules
+                    .where((schedule) => schedule.enabled)
+                    .toList();
+
+                if (enabledSchedules.isEmpty) {
+                  return const Center(
+                    child: Text('No active schedules',
+                        style: TextStyle(color: Colors.grey)),
+                  );
+                }
+
+                return ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: enabledSchedules.length,
+                  separatorBuilder: (context, index) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final schedule = enabledSchedules[index];
+                    final isWatering = schedule.type == 'watering';
+                    final timeStr = schedule.time;
+                    final isPM = int.parse(timeStr.split(':')[0]) >= 12;
+                    final hour = int.parse(timeStr.split(':')[0]) % 12;
+                    final minute = timeStr.split(':')[1];
+                    final formattedTime =
+                        '${hour == 0 ? 12 : hour}:$minute ${isPM ? 'PM' : 'AM'}';
+
+                    return Row(
+                      children: [
+                        Icon(
+                          isWatering ? Icons.water_drop : Icons.grass,
+                          color: isWatering ? Colors.blue : Colors.green,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                schedule.label ??
+                                    (isWatering ? 'Watering' : 'Fertilizing'),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                isWatering
+                                    ? 'Every ${schedule.days.join(", ")}'
+                                    : 'Monthly on day${schedule.calendarDays!.length > 1 ? "s" : ""} ${schedule.calendarDays!.join(", ")}',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          formattedTime,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildScheduleItem(String time, String hour) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(time),
-        Text(
-          hour,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ],
     );
   }
 

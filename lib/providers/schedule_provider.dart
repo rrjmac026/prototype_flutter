@@ -208,7 +208,49 @@ class ScheduleProvider with ChangeNotifier {
   }
 
   Future<bool> toggleScheduleEnabled(String scheduleId, bool enabled) async {
-    return updateSchedule(scheduleId, {'enabled': enabled});
+    // Find the schedule index
+    final index = _schedules.indexWhere((s) => s.id == scheduleId);
+    if (index == -1) return false;
+
+    // Store old state in case we need to revert
+    final oldSchedule = _schedules[index];
+
+    try {
+      // Optimistically update the UI
+      _schedules[index] = oldSchedule.copyWith(enabled: enabled);
+      notifyListeners();
+
+      // Prepare update data with all necessary fields
+      final updateData = {
+        'type': oldSchedule.type,
+        'time': oldSchedule.time,
+        'days': oldSchedule.days,
+        'calendarDays': oldSchedule.calendarDays,
+        'duration': oldSchedule.duration,
+        'enabled': enabled,
+        'label': oldSchedule.label,
+        'settings': oldSchedule.settings?.toJson(),
+      };
+
+      // Make the API call
+      final success =
+          await _scheduleService.updateSchedule(scheduleId, updateData);
+
+      if (!success) {
+        // Revert the change if the API call failed
+        _schedules[index] = oldSchedule;
+        _error = 'Failed to update schedule';
+        notifyListeners();
+      }
+
+      return success;
+    } catch (e) {
+      // Revert the change on error
+      _schedules[index] = oldSchedule;
+      _error = 'Failed to update schedule: ${e.toString()}';
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<bool> deleteSchedule(String scheduleId) async {

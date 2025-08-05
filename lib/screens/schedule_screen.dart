@@ -34,7 +34,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Watering Schedule'),
+        title: const Text('Scheduling Page'),
         actions: [
           Consumer<ScheduleProvider>(
             builder: (context, provider, _) => IconButton(
@@ -248,8 +248,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 'type': 'fertilizing',
                 'time': schedule.time,
                 'days': [], // Empty for fertilizing schedules
-                'calendarDays':
-                    schedule.calendarDays, // This is the key difference
+                'calendarDays': schedule.calendarDays, // Changed semicolon to comma
                 'duration': schedule.duration,
                 'enabled': schedule.enabled,
                 'label': schedule.label,
@@ -596,7 +595,20 @@ class ScheduleCard extends StatelessWidget {
                 const Spacer(),
                 Switch(
                   value: schedule.enabled,
-                  onChanged: onToggle,
+                  onChanged: (newValue) async {
+                    try {
+                      await onToggle(newValue); // Remove success check since onToggle doesn't return anything
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: ${e.toString()}'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    }
+                  },
                   activeColor: color,
                 ),
               ],
@@ -1447,3 +1459,4 @@ class _FertilizingScheduleDialogState extends State<FertilizingScheduleDialog> {
     );
   }
 }
+
