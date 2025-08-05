@@ -396,9 +396,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          _buildStatCard('Total Plants', '1'),
-          _buildStatCard('Active Alerts', _alerts.length.toString()),
-          // Add Generate Report Card
+          // Generate Report Card
           Card(
             child: InkWell(
               onTap: _generateReport,
@@ -456,27 +454,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 16),
           _buildSettingsSection(context),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String title, String value) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(title),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
