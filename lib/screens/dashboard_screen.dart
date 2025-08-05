@@ -463,40 +463,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    final moisturePercentage = data.soilMoisture;
-
     return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding:
-            const EdgeInsets.fromLTRB(8, 16, 16, 8), // Adjusted right padding
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Text('Sensor Readings',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              'Sensor Readings',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildLegendItem('Moisture (%)', Colors.blue),
+                  _buildEnhancedLegendItem(
+                    'Moisture',
+                    '${data.soilMoisture.toStringAsFixed(1)}%',
+                    Colors.blue.shade400,
+                  ),
                   const SizedBox(width: 16),
-                  _buildLegendItem('Humidity (%)', Colors.green),
+                  _buildEnhancedLegendItem(
+                    'Humidity',
+                    '${data.humidity.toStringAsFixed(1)}%',
+                    Colors.green.shade400,
+                  ),
                   const SizedBox(width: 16),
-                  _buildLegendItem('Temperature (°C)', Colors.orange),
+                  _buildEnhancedLegendItem(
+                    'Temperature',
+                    '${data.temperature.toStringAsFixed(1)}°C',
+                    Colors.orange.shade400,
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 24),
             SizedBox(
-              height: 180,
+              height: 200,
               child: LineChart(
                 LineChartData(
-                  gridData: const FlGridData(show: true),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      tooltipBgColor:
+                          Theme.of(context).cardColor.withOpacity(0.8),
+                      tooltipRoundedRadius: 8,
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          String label = '';
+                          Color color = Colors.blue;
+                          switch (spot.x.toInt()) {
+                            case 0:
+                              label = 'Moisture: ${spot.y.toStringAsFixed(1)}%';
+                              color = Colors.blue.shade400;
+                              break;
+                            case 1:
+                              label = 'Humidity: ${spot.y.toStringAsFixed(1)}%';
+                              color = Colors.green.shade400;
+                              break;
+                            case 2:
+                              label = 'Temp: ${spot.y.toStringAsFixed(1)}°C';
+                              color = Colors.orange.shade400;
+                              break;
+                          }
+                          return LineTooltipItem(
+                            label,
+                            TextStyle(
+                                color: color, fontWeight: FontWeight.bold),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: true,
+                    horizontalInterval: 20,
+                    verticalInterval: 1,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: Theme.of(context).dividerColor.withOpacity(0.2),
+                      strokeWidth: 1,
+                    ),
+                    getDrawingVerticalLine: (value) => FlLine(
+                      color: Theme.of(context).dividerColor.withOpacity(0.2),
+                      strokeWidth: 1,
+                    ),
+                  ),
                   titlesData: FlTitlesData(
                     rightTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
@@ -504,61 +562,121 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
-                    leftTitles: AxisTitles(
-                      axisNameWidget: const Text('Value'),
+                    bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
-                        reservedSize: 32, // Increased reserved size
+                        interval: 1,
                         getTitlesWidget: (value, meta) {
+                          String text = '';
+                          switch (value.toInt()) {
+                            case 0:
+                              text = 'Moisture';
+                              break;
+                            case 1:
+                              text = 'Humidity';
+                              break;
+                            case 2:
+                              text = 'Temp';
+                              break;
+                          }
                           return Padding(
-                            padding: const EdgeInsets.only(right: 4),
+                            padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              value.toInt().toString(),
-                              style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 9,
+                              text,
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withOpacity(0.6),
+                                fontSize: 12,
                               ),
                             ),
                           );
                         },
-                        interval: 20,
                       ),
                     ),
-                    bottomTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: 20,
+                        reservedSize: 36,
+                        getTitlesWidget: (value, meta) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              value.toInt().toString(),
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withOpacity(0.6),
+                                fontSize: 12,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                  borderData: FlBorderData(show: true),
-                  lineBarsData: [
-                    // Moisture line (percentage from server)
-                    LineChartBarData(
-                      spots: [FlSpot(0, moisturePercentage)],
-                      isCurved: true,
-                      color: Colors.blue,
-                      dotData: const FlDotData(show: true),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: Colors.blue.withOpacity(0.2),
-                      ),
-                    ),
-                    // Humidity line (0-100%)
-                    LineChartBarData(
-                      spots: [FlSpot(1, data.humidity)],
-                      isCurved: true,
-                      color: Colors.green,
-                      dotData: const FlDotData(show: true),
-                    ),
-                    // Temperature line (°C)
-                    LineChartBarData(
-                      spots: [FlSpot(2, data.temperature)],
-                      isCurved: true,
-                      color: Colors.orange,
-                      dotData: const FlDotData(show: true),
-                    ),
-                  ],
+                  borderData: FlBorderData(show: false),
+                  minX: -0.5,
+                  maxX: 2.5,
                   minY: 0,
                   maxY: 100,
-                  // Remove margin property
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: [
+                        FlSpot(0, data.soilMoisture),
+                        FlSpot(1, data.humidity),
+                        FlSpot(2, data.temperature),
+                      ],
+                      isCurved: true,
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.blue.shade400,
+                          Colors.green.shade400,
+                          Colors.orange.shade400,
+                        ],
+                      ),
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, barData, index) {
+                          Color dotColor;
+                          switch (index) {
+                            case 0:
+                              dotColor = Colors.blue.shade400;
+                              break;
+                            case 1:
+                              dotColor = Colors.green.shade400;
+                              break;
+                            case 2:
+                              dotColor = Colors.orange.shade400;
+                              break;
+                            default:
+                              dotColor = Colors.blue.shade400;
+                          }
+                          return FlDotCirclePainter(
+                            radius: 6,
+                            color: Theme.of(context).cardColor,
+                            strokeWidth: 3,
+                            strokeColor: dotColor,
+                          );
+                        },
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.blue.shade400.withOpacity(0.2),
+                            Colors.green.shade400.withOpacity(0.2),
+                            Colors.orange.shade400.withOpacity(0.2),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -568,26 +686,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // Add this helper method for legend items
-  Widget _buildLegendItem(String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 16,
-          height: 4,
-          color: color,
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+  Widget _buildEnhancedLegendItem(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
