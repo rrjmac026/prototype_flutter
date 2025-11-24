@@ -47,4 +47,21 @@ class AuditLogger {
       details: details,
     );
   }
+
+  // Authentication events
+  static Future<void> logUserLogin(String email, String role) async {
+    await _auditService.createLog(
+      type: 'auth',
+      action: 'login',
+      details: 'User logged in (email: $email, role: $role)',
+    );
+  }
+
+  static Future<void> logUserLogout(String email) async {
+    await _auditService.createLog(
+      type: 'auth',
+      action: 'logout',
+      details: 'User logged out (email: $email)',
+    );
+  }
 }

@@ -4,6 +4,15 @@ import 'package:provider/provider.dart';
 import 'package:prototype/providers/auth_provider.dart';
 import 'package:prototype/services/api_service.dart';
 
+// Remove unused modular view imports
+import 'package:prototype/screens/audit_log_screen.dart';
+import 'package:prototype/screens/profile_screen.dart';
+import 'package:prototype/screens/reports_screen.dart';
+import 'package:prototype/screens/schedule_screen.dart';
+// Add these imports for admin views:
+import 'package:prototype/screens/admin/dashboard_view.dart';
+import 'package:prototype/screens/admin/users_management_view.dart';
+
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
 
@@ -22,6 +31,11 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  void _onAccount(BuildContext context) {
+    // Instead of navigating, switch to profile tab
+    setState(() => _selectedIndex = 4);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -29,30 +43,6 @@ class _AdminScreenState extends State<AdminScreen> {
         title: const Text('Admin Dashboard'),
         backgroundColor: Colors.green.shade700,
         elevation: 0,
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'logout') _onLogout(context);
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'profile',
-                child: Text('Account'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, size: 18),
-                    SizedBox(width: 8),
-                    Text('Logout'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
       body: Consumer<AuthProvider>(
         builder: (context, authProvider, _) {
@@ -61,51 +51,114 @@ class _AdminScreenState extends State<AdminScreen> {
             return _buildAccessDeniedScreen(context);
           }
 
-          return Row(
-            children: [
-              NavigationRail(
-                selectedIndex: _selectedIndex,
-                onDestinationSelected: (int index) {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                },
-                labelType: NavigationRailLabelType.selected,
-                destinations: const [
-                  NavigationRailDestination(
-                    icon: Icon(Icons.dashboard),
-                    selectedIcon: Icon(Icons.dashboard),
-                    label: Text('Dashboard'),
+          // Main content area (page content)
+          return SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: _buildContent(_selectedIndex),
                   ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.people),
-                    selectedIcon: Icon(Icons.people),
-                    label: Text('Users'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.assessment),
-                    selectedIcon: Icon(Icons.assessment),
-                    label: Text('Reports'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.settings),
-                    selectedIcon: Icon(Icons.settings),
-                    label: Text('Settings'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.description),
-                    selectedIcon: Icon(Icons.description),
-                    label: Text('Audit Logs'),
-                  ),
-                ],
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: _buildContent(_selectedIndex),
-              ),
-            ],
+                ),
+              ],
+            ),
           );
         },
+      ),
+      bottomNavigationBar: _buildBottomNavBar(context),
+    );
+  }
+
+  Widget _buildBottomNavBar(BuildContext context) {
+    final items = <Map<String, dynamic>>[
+      {'icon': Icons.dashboard, 'label': 'Dashboard'},
+      {'icon': Icons.people, 'label': 'Users'},
+      {'icon': Icons.schedule, 'label': 'Schedule'},
+      {'icon': Icons.description, 'label': 'Audit'},
+      {'icon': Icons.account_circle, 'label': 'Profile'},
+    ];
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // navigation icons row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: List.generate(items.length, (index) {
+                final item = items[index];
+                final selected = _selectedIndex == index;
+                return Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedIndex = index),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: selected
+                          ? BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.green.shade200),
+                            )
+                          : null,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            item['icon'],
+                            color: selected ? Colors.green.shade700 : Colors.grey.shade600,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item['label'],
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: selected ? Colors.green.shade700 : Colors.grey.shade600,
+                              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 8),
+            // action buttons row (Logout only, Account/Profile is now a tab)
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _onLogout(context),
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Logout'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -151,353 +204,22 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget _buildContent(int index) {
     switch (index) {
       case 0:
-        return const _DashboardView();
+        // DashboardView can remain if you have a custom admin dashboard
+        return DashboardView();
       case 1:
-        return const _UsersManagementView();
+        // UsersManagementView can remain if you have a custom admin users view
+        return UsersManagementView();
       case 2:
-        return const _ReportsView();
+        // Use the shared ScheduleScreen
+        return const ScheduleScreen();
       case 3:
-        return const _SettingsView();
+        // Use the shared AuditLogScreen
+        return const AuditLogScreen();
       case 4:
-        return const _AuditLogsView();
+        // Use the shared ProfileScreen
+        return const ProfileScreen();
       default:
-        return const _DashboardView();
+        return DashboardView();
     }
-  }
-}
-
-// Dashboard View (simplified, no static numbers)
-class _DashboardView extends StatelessWidget {
-  const _DashboardView();
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'System Overview',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green.shade700,
-                ),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: List.generate(4, (i) {
-              return SizedBox(
-                width: 300,
-                child: Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Icon(
-                          [Icons.people, Icons.eco, Icons.health_and_safety, Icons.warning][i],
-                          size: 32,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '—', // placeholder for dynamic value
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                ['Active Users', 'Total Plants', 'System Health', 'Active Alerts'][i],
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Recent Activity',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green.shade700,
-                ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Column(
-                  children: [
-                    const Icon(Icons.history, size: 32, color: Colors.grey),
-                    const SizedBox(height: 8),
-                    const Text('No recent activity yet'),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: () {
-                        // TODO: hook to fetch recent activity
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Refreshing activity...')),
-                        );
-                      },
-                      child: const Text('Refresh'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Users Management View (placeholder + ready to hook)
-class _UsersManagementView extends StatefulWidget {
-  const _UsersManagementView();
-
-  @override
-  State<_UsersManagementView> createState() => _UsersManagementViewState();
-}
-
-class _UsersManagementViewState extends State<_UsersManagementView> {
-  bool _loading = false;
-  List<dynamic> _users = [];
-
-  Future<void> _loadUsers() async {
-    setState(() => _loading = true);
-    try {
-      final resp = await ApiService.get('/auth/users');
-      if (resp.statusCode == 200) {
-        final body = resp.body;
-        final parsed = body.isNotEmpty ? jsonDecode(body) : null;
-
-        if (parsed is Map && parsed.containsKey('users')) {
-          setState(() => _users = List<dynamic>.from(parsed['users']));
-        } else if (parsed is List) {
-          setState(() => _users = List<dynamic>.from(parsed));
-        } else {
-          setState(() => _users = []);
-        }
-      } else if (resp.statusCode == 401) {
-        setState(() => _users = []);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Unauthorized. Please login again.')),
-          );
-        }
-      } else {
-        setState(() => _users = []);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to load users: ${resp.statusCode}')),
-          );
-        }
-      }
-    } catch (e) {
-      setState(() => _users = []);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading users: $e')),
-        );
-      }
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'User Management',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
-                    ),
-              ),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: _loading ? null : _loadUsers,
-                    icon: _loading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.refresh),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      // TODO: open add-user dialog (server integration)
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add user not implemented')));
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add User'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade400),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _users.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.people_outline, size: 48, color: Colors.grey),
-                                const SizedBox(height: 8),
-                                const Text('No users loaded'),
-                                const SizedBox(height: 12),
-                                ElevatedButton(onPressed: _loadUsers, child: const Text('Load Users')),
-                              ],
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: _users.length,
-                            separatorBuilder: (_, __) => const Divider(),
-                            itemBuilder: (context, index) {
-                              final user = _users[index];
-                              final email = user['email'] ?? user['mail'] ?? '—';
-                              final username = user['username'] ?? user['name'] ?? '—';
-                              final role = (user['role'] ?? 'user').toString();
-                              return ListTile(
-                                leading: CircleAvatar(child: Text(username.isNotEmpty ? username[0].toUpperCase() : '?')),
-                                title: Text(username),
-                                subtitle: Text(email),
-                                trailing: Text(role.toUpperCase()),
-                                onTap: () {
-                                  // TODO: show user details / actions
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User actions not implemented')));
-                                },
-                              );
-                            },
-                          ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Reports and Settings and AuditViews simplified placeholders
-class _ReportsView extends StatelessWidget {
-  const _ReportsView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Card(
-        margin: const EdgeInsets.all(24),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.assessment, size: 48, color: Colors.green),
-              const SizedBox(height: 12),
-              const Text('Reports will appear here'),
-              const SizedBox(height: 12),
-              ElevatedButton(onPressed: () {
-                // TODO: implement report export / listing
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reports not implemented')));
-              }, child: const Text('Refresh')),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SettingsView extends StatelessWidget {
-  const _SettingsView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Card(
-        margin: const EdgeInsets.all(24),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.settings, size: 48, color: Colors.green),
-              const SizedBox(height: 12),
-              const Text('System settings will be managed here'),
-              const SizedBox(height: 12),
-              ElevatedButton(onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings not implemented')));
-              }, child: const Text('Open Settings')),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AuditLogsView extends StatelessWidget {
-  const _AuditLogsView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Card(
-        margin: const EdgeInsets.all(24),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.description, size: 48, color: Colors.green),
-              const SizedBox(height: 12),
-              const Text('Audit logs viewer will be here'),
-              const SizedBox(height: 12),
-              ElevatedButton(onPressed: () {
-                // TODO: link to AuditLogScreen
-                Navigator.of(context).pushNamed('/admin'); // placeholder
-              }, child: const Text('Open Audit Logs')),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

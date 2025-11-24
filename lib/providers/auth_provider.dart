@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:prototype/services/auth_service.dart';
+import 'package:prototype/utils/audit_logger.dart';
 
 class AuthProvider extends ChangeNotifier {
   final _authService = AuthService();
@@ -38,6 +39,11 @@ class AuthProvider extends ChangeNotifier {
     if (result['success'] == true) {
       _isLoggedIn = true;
       _user = result['user'];
+      final userRole = _user?['role'] ?? 'user';
+      
+      // Log successful login
+      await AuditLogger.logUserLogin(email, userRole);
+      
       notifyListeners();
       return true;
     } else {
@@ -60,10 +66,42 @@ class AuthProvider extends ChangeNotifier {
       _isLoggedIn = true;
       _user = result['user'];
       _isGoogleSignIn = true;
+      final userRole = _user?['role'] ?? 'user';
+      final email = _user?['email'] ?? 'unknown';
+      
+      // Log successful Google login
+      await AuditLogger.logUserLogin(email, userRole);
+      
       notifyListeners();
       return true;
     } else {
       _error = result['error'] ?? 'Google login failed';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> register(String email, String password, String username, {String role = 'user'}) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    final result = await _authService.register(email, password, username, role: role);
+
+    _isLoading = false;
+
+    if (result['success'] == true) {
+      _isLoggedIn = true;
+      _user = result['user'];
+      _isGoogleSignIn = false;
+      
+      // Log successful registration and login
+      await AuditLogger.logUserLogin(email, role);
+      
+      notifyListeners();
+      return true;
+    } else {
+      _error = result['error'] ?? 'Registration failed';
       notifyListeners();
       return false;
     }
@@ -80,6 +118,10 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     _isLoading = true;
     notifyListeners();
+
+    // Log logout before clearing user data
+    final email = _user?['email'] ?? 'unknown';
+    await AuditLogger.logUserLogout(email);
 
     if (_isGoogleSignIn) {
       await _authService.googleLogout();

@@ -161,50 +161,86 @@ class ApiService {
   ) async {
     try {
       debugPrint('Generating report...');
-      // Use sensor-data endpoint instead of report since that's what exists
-      final endpoint = '$baseUrl/plants/$plantId/sensor-data';
+      final endpoints = [
+        '$baseUrl/plants/$plantId/sensor-data',
+        '$backupUrl/sensor-data'
+      ];
 
-      final response = await http.get(
-        Uri.parse(endpoint).replace(queryParameters: {
-          'startDate': startDate.toIso8601String(),
-          'endDate': endDate.toIso8601String(),
-        }),
-        headers: {'Accept': 'application/json'},
-      ).timeout(const Duration(seconds: 30));
+      for (final endpoint in endpoints) {
+        try {
+          final uri = endpoint.contains('/sensor-data')
+              ? Uri.parse(endpoint).replace(queryParameters: {
+                  'plantId': plantId,
+                  'startDate': startDate.toIso8601String(),
+                  'endDate': endDate.toIso8601String(),
+                })
+              : Uri.parse(endpoint).replace(queryParameters: {
+                  'startDate': startDate.toIso8601String(),
+                  'endDate': endDate.toIso8601String(),
+                });
 
-      debugPrint('Response status: ${response.statusCode}');
+          final response = await http.get(
+            uri,
+            headers: {'Accept': 'application/json'},
+          ).timeout(const Duration(seconds: 30));
 
-      if (response.statusCode == 200) {
-        final List<dynamic> readings = json.decode(response.body);
-        if (readings.isEmpty) {
-          throw Exception('No data available for selected date range');
+          debugPrint('Response status: ${response.statusCode}');
+
+          if (response.statusCode == 200) {
+            final decoded = json.decode(response.body);
+
+            // Accept both array and object responses
+            List<dynamic> readings;
+            if (decoded is List) {
+              readings = decoded;
+            } else if (decoded is Map) {
+              // Try common keys for readings
+              if (decoded['data'] is List) {
+                readings = decoded['data'];
+              } else if (decoded['readings'] is List) {
+                readings = decoded['readings'];
+              } else if (decoded['sensorData'] is List) {
+                readings = decoded['sensorData'];
+              } else {
+                throw Exception('Unexpected report response format');
+              }
+            } else {
+              throw Exception('Unexpected report response format');
+            }
+
+            if (readings.isEmpty) {
+              throw Exception('No data available for selected date range');
+            }
+
+            // Calculate averages from the readings
+            double totalMoisture = 0;
+            double totalTemp = 0;
+            double totalHumidity = 0;
+            int count = readings.length;
+
+            for (var reading in readings) {
+              totalMoisture += _parseDoubleValue(reading['moisture']);
+              totalTemp += _parseDoubleValue(reading['temperature']);
+              totalHumidity += _parseDoubleValue(reading['humidity']);
+            }
+
+            return {
+              'summary': {
+                'averageMoisture': totalMoisture / count,
+                'averageTemperature': totalTemp / count,
+                'averageHumidity': totalHumidity / count,
+              },
+              'readings': readings,
+              'alerts': _generateAlerts(readings),
+              'timestamp': DateTime.now().toIso8601String(),
+            };
+          }
+        } catch (e) {
+          debugPrint('Error with endpoint $endpoint: $e');
+          continue;
         }
-
-        // Calculate averages from the readings
-        double totalMoisture = 0;
-        double totalTemp = 0;
-        double totalHumidity = 0;
-        int count = readings.length;
-
-        for (var reading in readings) {
-          totalMoisture += _parseDoubleValue(reading['moisture']);
-          totalTemp += _parseDoubleValue(reading['temperature']);
-          totalHumidity += _parseDoubleValue(reading['humidity']);
-        }
-
-        return {
-          'summary': {
-            'averageMoisture': totalMoisture / count,
-            'averageTemperature': totalTemp / count,
-            'averageHumidity': totalHumidity / count,
-          },
-          'readings': readings,
-          'alerts': _generateAlerts(readings),
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-      } else {
-        throw Exception('Failed to fetch sensor data: ${response.statusCode}');
       }
+      throw Exception('Failed to fetch sensor data: No valid endpoint');
     } catch (e) {
       debugPrint('Error generating report: $e');
       throw Exception('Unable to generate report: ${e.toString()}');

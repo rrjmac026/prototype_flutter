@@ -4,6 +4,7 @@ import 'package:prototype/theme/app_theme.dart';
 import 'package:prototype/providers/theme_provider.dart';
 import 'package:prototype/screens/home_screen.dart';
 import 'package:prototype/screens/login_screen.dart';
+import 'package:prototype/screens/register_screen.dart';
 import 'package:prototype/providers/plant_data_provider.dart';
 import 'package:prototype/providers/settings_provider.dart';
 import 'package:prototype/providers/user_provider.dart';
@@ -59,6 +60,7 @@ class MyApp extends StatelessWidget {
           home: _buildHome(authProvider),
           routes: {
             '/login': (context) => const LoginScreen(),
+            '/register': (context) => const RegisterScreen(),
             '/home': (context) => const HomeScreen(),
             '/admin': (context) => const AdminScreen(),
           },

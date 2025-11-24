@@ -71,6 +71,11 @@ class AuthService {
     return null;
   }
 
+  Future<String?> getCurrentUserId() async {
+    final userData = await getUserData();
+    return userData?['id'];
+  }
+
   Future<bool> isLoggedIn() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;
@@ -138,6 +143,42 @@ class AuthService {
       await logout();
     } catch (e) {
       debugPrint('Google logout error: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> register(
+    String email,
+    String password,
+    String username, {
+    String role = 'user',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+          'username': username,
+          'role': role,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        await _saveToken(data['token']);
+        await _saveUserData(data['user']);
+        return {'success': true, 'user': data['user']};
+      } else if (response.statusCode == 409) {
+        final errorData = response.body.isNotEmpty ? jsonDecode(response.body) : null;
+        return {'success': false, 'error': errorData?['error'] ?? 'User already exists'};
+      } else {
+        final errorData = response.body.isNotEmpty ? jsonDecode(response.body) : null;
+        return {'success': false, 'error': errorData?['error'] ?? 'Registration failed'};
+      }
+    } catch (e) {
+      debugPrint('Register error: $e');
+      return {'success': false, 'error': 'Connection error. Please try again.'};
     }
   }
 }

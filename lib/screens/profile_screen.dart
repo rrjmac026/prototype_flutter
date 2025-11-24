@@ -4,14 +4,17 @@ import 'package:image_picker/image_picker.dart';
 import 'package:prototype/providers/theme_provider.dart';
 import 'package:prototype/providers/settings_provider.dart';
 import 'package:prototype/providers/user_provider.dart';
+import 'package:prototype/providers/auth_provider.dart';
+import 'package:prototype/services/auth_service.dart';
+import 'package:prototype/utils/audit_logger.dart';
 import 'dart:io';
-import 'dart:async'; // Add this for Timer
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:prototype/services/api_service.dart';
-import 'package:intl/intl.dart'; // Add this for DateFormat
-import 'package:path_provider/path_provider.dart'; // Add this for temporary directory
-import 'package:url_launcher/url_launcher.dart'; // Add this for launching URLs
-import 'dart:convert'; // Add this for jsonEncode
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:convert';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,28 +26,63 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   String _selectedLanguage = 'English';
   bool _notificationsEnabled = true;
-  String _username = 'Jam Mac';
+  String _username = 'User';
   String _bio = 'Plant Enthusiast';
   File? _profileImage;
-  String? _profileImagePath; // Add this line
+  String? _profileImagePath;
+  String? _userId;
   List<Map<String, dynamic>> _alerts = [];
-  Timer? _alertsTimer; // Add this
-  DateTimeRange? _selectedDateRange; // Add this
+  Timer? _alertsTimer;
+  DateTimeRange? _selectedDateRange;
+  final _authService = AuthService();
 
   @override
   void initState() {
     super.initState();
-    _loadProfileData();
+    _initializeUserProfile();
+    _logProfileAccess();
+  }
+
+  Future<void> _initializeUserProfile() async {
+    // Get current user ID
+    _userId = await _authService.getCurrentUserId();
+    
+    // Get user data from AuthProvider
+    final authUser = context.read<AuthProvider>().user;
+    if (authUser != null) {
+      _username = authUser['username'] ?? authUser['displayName'] ?? 'User';
+    }
+    
+    // Load user-specific profile data
+    await _loadProfileData();
+  }
+
+  Future<void> _logProfileAccess() async {
+    final userRole = context.read<AuthProvider>().user?['role'] ?? 'user';
+    await AuditLogger.logUserAction(
+      'profile_access',
+      'User accessed profile screen (role: $userRole)',
+    );
   }
 
   Future<void> _loadProfileData() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    if (_userId == null) {
+      setState(() {
+        _selectedLanguage = prefs.getString('language') ?? 'English';
+        _notificationsEnabled = prefs.getBool('notifications') ?? true;
+        _bio = prefs.getString('bio') ?? 'Plant Enthusiast';
+      });
+      return;
+    }
+
+    // Load user-specific data using userId as key prefix
     setState(() {
       _selectedLanguage = prefs.getString('language') ?? 'English';
       _notificationsEnabled = prefs.getBool('notifications') ?? true;
-      _username = Provider.of<UserProvider>(context, listen: false).username;
-      _bio = prefs.getString('bio') ?? 'Plant Enthusiast';
-      _profileImagePath = prefs.getString('profileImagePath');
+      _bio = prefs.getString('user_${_userId}_bio') ?? 'Plant Enthusiast';
+      _profileImagePath = prefs.getString('user_${_userId}_profileImagePath');
       if (_profileImagePath != null) {
         _profileImage = File(_profileImagePath!);
       }
@@ -55,13 +93,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('language', _selectedLanguage);
     await prefs.setBool('notifications', _notificationsEnabled);
-    await Provider.of<UserProvider>(context, listen: false)
-        .setUsername(_username);
-    await prefs.setString('bio', _bio);
-    if (_profileImagePath != null) {
-      await prefs.setString('profileImagePath', _profileImagePath!);
-    } else {
-      await prefs.remove('profileImagePath');
+    
+    if (_userId != null) {
+      // Save user-specific data
+      await prefs.setString('user_${_userId}_bio', _bio);
+      if (_profileImagePath != null) {
+        await prefs.setString('user_${_userId}_profileImagePath', _profileImagePath!);
+      } else {
+        await prefs.remove('user_${_userId}_profileImagePath');
+      }
     }
   }
 
@@ -80,8 +120,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             TextField(
               controller: nameController,
+              enabled: false,
               decoration: const InputDecoration(
-                labelText: 'Name',
+                labelText: 'Name (from account)',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -113,10 +154,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (result == true) {
       setState(() {
-        _username = nameController.text;
         _bio = bioController.text;
       });
       await _saveProfileData();
+      await AuditLogger.logUserAction(
+        'profile_edit',
+        'User updated profile information',
+      );
     }
   }
 
@@ -142,7 +186,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _profileImage = File(photo.path);
                       _profileImagePath = photo.path;
                     });
-                    await _saveProfileData(); // Save after updating image
+                    await _saveProfileData();
+                    await AuditLogger.logUserAction(
+                      'profile_photo_update',
+                      'User updated profile photo (camera)',
+                    );
                   }
                 },
               ),
@@ -160,7 +208,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _profileImage = File(image.path);
                       _profileImagePath = image.path;
                     });
-                    await _saveProfileData(); // Save after updating image
+                    await _saveProfileData();
+                    await AuditLogger.logUserAction(
+                      'profile_photo_update',
+                      'User updated profile photo (gallery)',
+                    );
                   }
                 },
               ),
@@ -176,7 +228,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _profileImage = null;
                       _profileImagePath = null;
                     });
-                    await _saveProfileData(); // Save after removing image
+                    await _saveProfileData();
+                    await AuditLogger.logUserAction(
+                      'profile_photo_remove',
+                      'User removed profile photo',
+                    );
                   },
                 ),
             ],
@@ -188,7 +244,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _generateReport() async {
     try {
-      // Show date picker first
       final pickedRange = await showDateRangePicker(
         context: context,
         firstDate: DateTime.now().subtract(const Duration(days: 365)),
@@ -230,12 +285,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
 
-      // Get theme colors and styling parameters
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final primaryColor = Theme.of(context).colorScheme.primary;
       final accentColor = Theme.of(context).colorScheme.secondary;
 
-      // Build URL with enhanced styling parameters
       final url = Uri.parse('${ApiService.baseUrl}/reports?' +
           'plantId=${ApiService.defaultPlantId}&' +
           'start=${pickedRange.start.toIso8601String()}&' +
@@ -262,9 +315,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               'showPageNumbers': true
             }
           })));
-
       if (context.mounted) {
-        Navigator.pop(context); // Hide loading dialog
+        Navigator.pop(context);
+        await AuditLogger.logUserAction(
+          'report_generated',
+          'User generated report for ${DateFormat('MMM d').format(pickedRange.start)} - ${DateFormat('MMM d').format(pickedRange.end)}',
+        );
 
         if (await canLaunchUrl(url)) {
           await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -282,22 +338,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Widget _buildReportSection(String title, List<String> items) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        ...items.map((item) => Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 4),
-              child: Text('• $item'),
-            )),
-      ],
-    );
+  Future<void> _handleLogout() async {
+    try {
+      await AuditLogger.logUserAction(
+        'logout',
+        'User logged out',
+      );
+      await context.read<AuthProvider>().logout();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/login');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Logout failed: $e')),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final userRole = context.read<AuthProvider>().user?['role'] ?? 'user';
+    final isAdmin = userRole == 'admin';
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -309,22 +372,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
               background: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.green.shade400, Colors.teal.shade400],
+                    colors: isAdmin
+                        ? [Colors.purple.shade400, Colors.indigo.shade400]
+                        : [Colors.green.shade400, Colors.teal.shade400],
                   ),
                 ),
-                child: _buildProfileHeader(),
+                child: _buildProfileHeader(isAdmin),
               ),
             ),
           ),
           SliverFillRemaining(
-            child: SingleChildScrollView(child: _buildOverviewTab()),
+            child: SingleChildScrollView(
+              child: _buildRoleSpecificContent(isAdmin),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildProfileHeader() {
+  Widget _buildProfileHeader(bool isAdmin) {
     return SafeArea(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -338,7 +405,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   backgroundImage:
                       _profileImage != null ? FileImage(_profileImage!) : null,
                   child: _profileImage == null
-                      ? const Icon(Icons.person, size: 50)
+                      ? Icon(
+                          isAdmin ? Icons.admin_panel_settings : Icons.person,
+                          size: 50,
+                        )
                       : null,
                 ),
               ),
@@ -364,13 +434,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Column(
                   children: [
-                    Text(
-                      _username,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          _username,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (isAdmin)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.yellow.shade600,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'ADMIN',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     Text(
                       _bio,
@@ -391,66 +485,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildOverviewTab() {
+  Widget _buildRoleSpecificContent(bool isAdmin) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // Generate Report Card
-          Card(
-            child: InkWell(
-              onTap: _generateReport,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        Icons.description_outlined,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Generate Report',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Download a detailed report of your plant data',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          if (isAdmin) ...[
+            _buildAdminCard(),
+            const SizedBox(height: 16),
+          ],
+          _buildGenerateReportCard(),
           const SizedBox(height: 16),
           _buildSettingsSection(context),
         ],
@@ -458,10 +502,113 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _alertsTimer?.cancel(); // Add this
-    super.dispose();
+  Widget _buildAdminCard() {
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.purple.shade200),
+      ),
+      color: Colors.purple.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.admin_panel_settings,
+                color: Colors.purple.shade700,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Administrator Access',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'You have full access to admin features',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.purple.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenerateReportCard() {
+    return Card(
+      child: InkWell(
+        onTap: _generateReport,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.description_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Generate Report',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Download a detailed report of your plant data',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSettingsSection(BuildContext context) {
@@ -522,6 +669,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onChanged: (value) {
                         Provider.of<ThemeProvider>(context, listen: false)
                             .toggleTheme(value);
+                        AuditLogger.logUserAction(
+                          'theme_changed',
+                          'User changed theme to ${value ? 'dark' : 'light'} mode',
+                        );
                       },
                     ),
                   ),
@@ -537,7 +688,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         );
                       }).toList(),
                       onChanged: (value) {
-                        if (value != null) settings.setLanguage(value);
+                        if (value != null) {
+                          settings.setLanguage(value);
+                          AuditLogger.logUserAction(
+                            'language_changed',
+                            'User changed language to ${value.name}',
+                          );
+                        }
                       },
                     ),
                   ),
@@ -560,7 +717,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         );
                       }).toList(),
                       onChanged: (value) {
-                        if (value != null) settings.setTempUnit(value);
+                        if (value != null) {
+                          settings.setTempUnit(value);
+                          AuditLogger.logUserAction(
+                            'temp_unit_changed',
+                            'User changed temperature unit to ${value.name}',
+                          );
+                        }
                       },
                     ),
                   ),
@@ -576,8 +739,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: settings.getLocalizedText('Push Notifications'),
                     trailing: Switch.adaptive(
                       value: settings.pushEnabled,
-                      onChanged: (value) => settings.setNotifications(
-                          value, settings.messageEnabled),
+                      onChanged: (value) {
+                        settings.setNotifications(
+                            value, settings.messageEnabled);
+                        AuditLogger.logUserAction(
+                          'push_notifications_changed',
+                          'User toggled push notifications to $value',
+                        );
+                      },
                     ),
                   ),
                   _buildSettingsTile(
@@ -585,11 +754,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: settings.getLocalizedText('Message Notifications'),
                     trailing: Switch.adaptive(
                       value: settings.messageEnabled,
-                      onChanged: (value) => settings.setNotifications(
-                          settings.pushEnabled, value),
+                      onChanged: (value) {
+                        settings.setNotifications(
+                            settings.pushEnabled, value);
+                        AuditLogger.logUserAction(
+                          'message_notifications_changed',
+                          'User toggled message notifications to $value',
+                        );
+                      },
                     ),
                   ),
                 ],
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 20, color: Colors.grey),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Account',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const Spacer(),
+                    ElevatedButton.icon(
+                      onPressed: _handleLogout,
+                      icon: const Icon(Icons.logout, size: 16),
+                      label: const Text('Logout'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade600,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -681,5 +886,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _alertsTimer?.cancel();
+    super.dispose();
   }
 }
