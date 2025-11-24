@@ -19,6 +19,7 @@ dependencies:
   path_provider: ^2.1.2
   fl_chart: ^1.1.1 
   url_launcher: ^6.2.1
+  google_sign_in: ^6.2.1
 
 dev_dependencies:
   flutter_test:
@@ -33,3 +34,6 @@ flutter_icons:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/
+    - assets/google_logo.png

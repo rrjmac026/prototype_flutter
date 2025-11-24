@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:prototype/utils/report_config.dart';
 import '../services/audit_service.dart';
+import '../services/auth_service.dart';
 
 class ApiService {
   static const String baseUrl = 'https://server-ydsa.onrender.com/api';
@@ -281,5 +282,47 @@ class ApiService {
       debugPrint('Error updating plant: $e');
       rethrow;
     }
+  }
+
+  static Future<Map<String, String>> _getHeaders() async {
+    final token = await AuthService().getToken();
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  static Future<http.Response> get(String endpoint) async {
+    final headers = await _getHeaders();
+    return http.get(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 30));
+  }
+
+  static Future<http.Response> post(String endpoint, dynamic body) async {
+    final headers = await _getHeaders();
+    return http.post(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+      body: body,
+    ).timeout(const Duration(seconds: 30));
+  }
+
+  static Future<http.Response> patch(String endpoint, dynamic body) async {
+    final headers = await _getHeaders();
+    return http.patch(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+      body: body,
+    ).timeout(const Duration(seconds: 30));
+  }
+
+  static Future<http.Response> delete(String endpoint) async {
+    final headers = await _getHeaders();
+    return http.delete(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 30));
   }
 }
