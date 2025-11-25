@@ -974,6 +974,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildSettingsSection(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
+    final isAdmin = context.read<AuthProvider>().user?['role'] == 'admin';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1061,8 +1062,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ],
               ),
+              if (!isAdmin) ...[
+                const Divider(height: 1),
+                _buildSettingsGroup(
+                  title: 'Measurements',
+                  icon: Icons.speed_outlined,
+                  children: [
+                    _buildSettingsTile(
+                      icon: Icons.thermostat,
+                      title: settings.getLocalizedText('Temperature Unit'),
+                      trailing: _buildDropdownButton<TempUnit>(
+                        value: settings.tempUnit,
+                        items: TempUnit.values.map((unit) {
+                          return DropdownMenuItem(
+                            value: unit,
+                            child: Text(unit.name.toUpperCase()),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            settings.setTempUnit(value);
+                            AuditLogger.logUserAction(
+                              'temp_unit_changed',
+                              'User changed temperature unit to ${value.name}',
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const Divider(height: 1),
-              if (!context.read<AuthProvider>().isAdmin()) ...[
+              if (!isAdmin) ...[
                 _buildSettingsGroup(
                   title: 'Notifications',
                   icon: Icons.notifications_outlined,
