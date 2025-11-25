@@ -290,13 +290,6 @@ class _DashboardViewState extends State<DashboardView>
             'color': Colors.blue,
             'subtitle': 'Registered'
           },
-          {
-            'title': 'Total Schedules',
-            'value': scheduleProvider.schedules.length.toString(),
-            'icon': Icons.schedule,
-            'color': Colors.green,
-            'subtitle': 'Active'
-          },
         ];
 
         return GridView.count(

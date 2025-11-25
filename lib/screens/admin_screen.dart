@@ -37,11 +37,6 @@ class _AdminScreenState extends State<AdminScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin'),
-        backgroundColor: Colors.green.shade700,
-        elevation: 0,
-      ),
       body: Consumer<AuthProvider>(
         builder: (context, authProvider, _) {
           final userRole = authProvider.user?['role'] ?? 'user';
