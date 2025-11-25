@@ -44,17 +44,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _initializeUserProfile() async {
-    // Get current user ID
-    _userId = await _authService.getCurrentUserId();
-    
-    // Get user data from AuthProvider
-    final authUser = context.read<AuthProvider>().user;
-    if (authUser != null) {
-      _username = authUser['username'] ?? authUser['displayName'] ?? 'User';
+    try {
+      // Get current user ID with retry logic
+      _userId = await _authService.getCurrentUserId();
+      
+      // If still null, try to get from AuthProvider
+      if (_userId == null && mounted) {
+        final authUser = context.read<AuthProvider>().user;
+        _userId = authUser?['uid'] ?? authUser?['id'];
+      }
+      
+      // Get user data from AuthProvider
+      if (mounted) {
+        final authUser = context.read<AuthProvider>().user;
+        if (authUser != null) {
+          final newUsername = authUser['username'] ?? authUser['displayName'] ?? 'User';
+          if (mounted) {
+            setState(() {
+              _username = newUsername;
+            });
+          }
+        }
+      }
+      
+      // Load user-specific profile data
+      await _loadProfileData();
+    } catch (e) {
+      print('Error initializing user profile: $e');
+      // Don't crash the app, just log the error
+      if (mounted) {
+        // Optionally show a subtle error to the user
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not load some profile data'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
-    
-    // Load user-specific profile data
-    await _loadProfileData();
   }
 
   Future<void> _logProfileAccess() async {
@@ -78,30 +105,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     // Load user-specific data using userId as key prefix
+    final storedImagePath = prefs.getString('user_${_userId}_profileImagePath');
+    
+    File? loadedImage;
+    if (storedImagePath != null) {
+      final imageFile = File(storedImagePath);
+      // Check if file exists and is accessible
+      try {
+        if (await imageFile.exists()) {
+          loadedImage = imageFile;
+        } else {
+          // File doesn't exist anymore, clear the stored path
+          await prefs.remove('user_${_userId}_profileImagePath');
+        }
+      } catch (e) {
+        print('Error loading profile image: $e');
+        // Clear invalid path
+        await prefs.remove('user_${_userId}_profileImagePath');
+      }
+    }
+    
     setState(() {
       _selectedLanguage = prefs.getString('language') ?? 'English';
       _notificationsEnabled = prefs.getBool('notifications') ?? true;
       _bio = prefs.getString('user_${_userId}_bio') ?? 'Plant Enthusiast';
-      _profileImagePath = prefs.getString('user_${_userId}_profileImagePath');
-      if (_profileImagePath != null) {
-        _profileImage = File(_profileImagePath!);
-      }
+      _profileImage = loadedImage;
+      _profileImagePath = loadedImage?.path;
     });
   }
 
   Future<void> _saveProfileData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('language', _selectedLanguage);
-    await prefs.setBool('notifications', _notificationsEnabled);
-    
-    if (_userId != null) {
-      // Save user-specific data
-      await prefs.setString('user_${_userId}_bio', _bio);
-      if (_profileImagePath != null) {
-        await prefs.setString('user_${_userId}_profileImagePath', _profileImagePath!);
-      } else {
-        await prefs.remove('user_${_userId}_profileImagePath');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('language', _selectedLanguage);
+      await prefs.setBool('notifications', _notificationsEnabled);
+      
+      if (_userId != null && _userId!.isNotEmpty) {
+        // Save user-specific data
+        await prefs.setString('user_${_userId}_bio', _bio);
+        
+        if (_profileImagePath != null && _profileImagePath!.isNotEmpty) {
+          await prefs.setString('user_${_userId}_profileImagePath', _profileImagePath!);
+          print('Saved profile image path: $_profileImagePath');
+        } else {
+          await prefs.remove('user_${_userId}_profileImagePath');
+          print('Removed profile image path');
+        }
       }
+    } catch (e) {
+      print('Error saving profile data: $e');
+      // Don't throw - just log the error
     }
   }
 
@@ -166,73 +219,105 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _handleImageSelection() async {
     final picker = ImagePicker();
+    
+    // Don't use context.read inside the bottom sheet callbacks
+    final settingsProvider = context.read<SettingsProvider>();
+    
     showModalBottomSheet(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext bottomSheetContext) {
         return SafeArea(
           child: Wrap(
             children: <Widget>[
               ListTile(
                 leading: const Icon(Icons.photo_camera),
-                title: Text(context
-                    .read<SettingsProvider>()
-                    .getLocalizedText('Take Photo')),
+                title: Text(settingsProvider.getLocalizedText('Take Photo')),
                 onTap: () async {
-                  Navigator.pop(context);
-                  final XFile? photo =
-                      await picker.pickImage(source: ImageSource.camera);
-                  if (photo != null) {
-                    setState(() {
-                      _profileImage = File(photo.path);
-                      _profileImagePath = photo.path;
-                    });
-                    await _saveProfileData();
-                    await AuditLogger.logUserAction(
-                      'profile_photo_update',
-                      'User updated profile photo (camera)',
+                  Navigator.pop(bottomSheetContext);
+                  try {
+                    final XFile? photo = await picker.pickImage(
+                      source: ImageSource.camera,
+                      maxWidth: 512,
+                      maxHeight: 512,
+                      imageQuality: 85,
                     );
+                    if (photo != null && mounted) {
+                      await _saveImageToLocalStorage(photo);
+                      await AuditLogger.logUserAction(
+                        'profile_photo_update',
+                        'User updated profile photo (camera)',
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to capture photo: $e')),
+                      );
+                    }
                   }
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library),
-                title: Text(context
-                    .read<SettingsProvider>()
-                    .getLocalizedText('Choose from Gallery')),
+                title: Text(settingsProvider.getLocalizedText('Choose from Gallery')),
                 onTap: () async {
-                  Navigator.pop(context);
-                  final XFile? image =
-                      await picker.pickImage(source: ImageSource.gallery);
-                  if (image != null) {
-                    setState(() {
-                      _profileImage = File(image.path);
-                      _profileImagePath = image.path;
-                    });
-                    await _saveProfileData();
-                    await AuditLogger.logUserAction(
-                      'profile_photo_update',
-                      'User updated profile photo (gallery)',
+                  Navigator.pop(bottomSheetContext);
+                  try {
+                    final XFile? image = await picker.pickImage(
+                      source: ImageSource.gallery,
+                      maxWidth: 512,
+                      maxHeight: 512,
+                      imageQuality: 85,
                     );
+                    if (image != null && mounted) {
+                      await _saveImageToLocalStorage(image);
+                      await AuditLogger.logUserAction(
+                        'profile_photo_update',
+                        'User updated profile photo (gallery)',
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to select photo: $e')),
+                      );
+                    }
                   }
                 },
               ),
               if (_profileImage != null)
                 ListTile(
                   leading: const Icon(Icons.delete, color: Colors.red),
-                  title: Text(context
-                      .read<SettingsProvider>()
-                      .getLocalizedText('Remove Photo')),
+                  title: Text(settingsProvider.getLocalizedText('Remove Photo')),
                   onTap: () async {
-                    Navigator.pop(context);
-                    setState(() {
-                      _profileImage = null;
-                      _profileImagePath = null;
-                    });
-                    await _saveProfileData();
-                    await AuditLogger.logUserAction(
-                      'profile_photo_remove',
-                      'User removed profile photo',
-                    );
+                    Navigator.pop(bottomSheetContext);
+                    try {
+                      // Delete the old file if it exists
+                      if (_profileImagePath != null) {
+                        final oldFile = File(_profileImagePath!);
+                        if (await oldFile.exists()) {
+                          await oldFile.delete();
+                        }
+                      }
+                      
+                      if (mounted) {
+                        setState(() {
+                          _profileImage = null;
+                          _profileImagePath = null;
+                        });
+                        await _saveProfileData();
+                        await AuditLogger.logUserAction(
+                          'profile_photo_remove',
+                          'User removed profile photo',
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed to remove photo: $e')),
+                        );
+                      }
+                    }
                   },
                 ),
             ],
@@ -241,7 +326,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
     );
   }
-
+  
   Future<void> _generateReport() async {
     try {
       final pickedRange = await showDateRangePicker(
@@ -339,15 +424,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _handleLogout() async {
+    // Show confirmation dialog first
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     try {
       await AuditLogger.logUserAction(
         'logout',
         'User logged out',
       );
+      
+      // Clear the userId to prevent any further operations
+      setState(() {
+        _userId = null;
+        _profileImage = null;
+        _profileImagePath = null;
+      });
+      
       await context.read<AuthProvider>().logout();
+      
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/login');
+      
+      // Use pushNamedAndRemoveUntil to clear the navigation stack
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/login',
+        (route) => false, // Remove all previous routes
+      );
     } catch (e) {
+      print('Logout error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Logout failed: $e')),
@@ -355,6 +479,164 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
+
+  Future<void> _checkAuthState() async {
+      try {
+        final authProvider = context.read<AuthProvider>();
+        final user = authProvider.user;
+        final userId = await _authService.getCurrentUserId();
+        
+        print('=== AUTH STATE CHECK ===');
+        print('Local _userId: $_userId');
+        print('AuthService userId: $userId');
+        print('AuthProvider user: ${user != null ? user['username'] ?? user['email'] : 'NULL'}');
+        print('AuthProvider role: ${user?['role']}');
+        print('Profile image path: $_profileImagePath');
+        print('Profile image exists: ${_profileImage?.existsSync()}');
+        print('=======================');
+        
+        // If there's a mismatch, something went wrong
+        if (user == null && _userId != null) {
+          print('WARNING: User is null but userId exists - possible session issue');
+          // Don't auto-logout, let user try to continue
+        }
+        
+        if (userId != _userId && userId != null) {
+          print('WARNING: userId mismatch detected');
+          setState(() {
+            _userId = userId;
+          });
+          await _loadProfileData();
+        }
+      } catch (e) {
+        print('Error checking auth state: $e');
+      }
+    }
+
+    Future<void> _saveImageToLocalStorage(XFile imageFile) async {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Uploading photo...'),
+              ],
+            ),
+            duration: Duration(seconds: 30),
+          ),
+        );
+      }
+      
+      try {
+        // Ensure we have a userId
+        String? currentUserId = _userId;
+        if (currentUserId == null || currentUserId.isEmpty) {
+          currentUserId = await _authService.getCurrentUserId();
+          if (currentUserId == null || currentUserId.isEmpty) {
+            throw Exception('User session expired. Please log in again.');
+          }
+          _userId = currentUserId;
+        }
+
+        // Get application documents directory
+        final appDir = await getApplicationDocumentsDirectory();
+        
+        // Create profiles subdirectory
+        final profilesDir = Directory('${appDir.path}/profiles');
+        if (!await profilesDir.exists()) {
+          await profilesDir.create(recursive: true);
+        }
+        
+        // Create a unique filename
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final fileName = 'profile_${currentUserId}_$timestamp.jpg';
+        final newPath = '${profilesDir.path}/$fileName';
+        
+        // Read and write the image
+        final bytes = await imageFile.readAsBytes();
+        final newFile = File(newPath);
+        await newFile.writeAsBytes(bytes, flush: true);
+        
+        // Verify file was created
+        if (!await newFile.exists()) {
+          throw Exception('Failed to save image file');
+        }
+        
+        print('Image saved to: $newPath');
+        
+        // Delete old profile image AFTER new one is saved successfully
+        if (_profileImagePath != null && 
+            _profileImagePath!.isNotEmpty && 
+            _profileImagePath != newPath) {
+          try {
+            final oldFile = File(_profileImagePath!);
+            if (await oldFile.exists()) {
+              await oldFile.delete();
+              print('Old image deleted: $_profileImagePath');
+            }
+          } catch (e) {
+            print('Failed to delete old image (non-critical): $e');
+          }
+        }
+        
+        // Update state
+        if (mounted) {
+          setState(() {
+            _profileImage = newFile;
+            _profileImagePath = newPath;
+          });
+          
+          // Save to SharedPreferences
+          await _saveProfileData();
+          
+          // Hide loading and show success
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 16),
+                  Text('Profile photo updated successfully'),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        print('Error in _saveImageToLocalStorage: $e');
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error, color: Colors.white),
+                  const SizedBox(width: 16),
+                  Expanded(child: Text('Failed to save photo: $e')),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    }
+  
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +647,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 200,
+            expandedHeight: 240, // Increased from 200 to 240
             floating: false,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
@@ -393,67 +675,124 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildProfileHeader(bool isAdmin) {
     return SafeArea(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Stack(
-            children: [
-              GestureDetector(
-                onTap: _handleImageSelection,
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundImage:
-                      _profileImage != null ? FileImage(_profileImage!) : null,
-                  child: _profileImage == null
-                      ? Icon(
-                          isAdmin ? Icons.admin_panel_settings : Icons.person,
-                          size: 50,
-                        )
-                      : null,
-                ),
-              ),
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.edit, color: Colors.white, size: 20),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: _editProfile,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            // Profile Picture with Edit Button
+            Stack(
               children: [
-                Column(
+                GestureDetector(
+                  onTap: _handleImageSelection,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 3,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.grey.shade200,
+                      backgroundImage: _profileImage != null && _profileImage!.existsSync()
+                          ? FileImage(_profileImage!)
+                          : null,
+                      child: _profileImage == null || !_profileImage!.existsSync()
+                          ? Icon(
+                              isAdmin ? Icons.admin_panel_settings : Icons.person,
+                              size: 50,
+                              color: Colors.grey.shade600,
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    onTap: _handleImageSelection,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.edit,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Name and Bio Section with proper overflow handling
+            GestureDetector(
+              onTap: _editProfile,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 300),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Name with Admin Badge
                     Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          _username,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                        Flexible(
+                          child: Text(
+                            _username,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (isAdmin)
+                        if (isAdmin) ...[
+                          const SizedBox(width: 8),
                           Container(
-                            margin: const EdgeInsets.only(left: 8),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
-                              vertical: 2,
+                              vertical: 4,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.yellow.shade600,
                               borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
                             child: const Text(
                               'ADMIN',
@@ -461,26 +800,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
+                                letterSpacing: 0.5,
                               ),
                             ),
                           ),
+                        ],
                       ],
                     ),
-                    Text(
-                      _bio,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.white70,
-                      ),
+                    const SizedBox(height: 4),
+                    
+                    // Bio with Edit Icon
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            _bio,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.white70,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Icon(
+                          Icons.edit,
+                          color: Colors.white70,
+                          size: 16,
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(width: 8),
-                const Icon(Icons.edit, color: Colors.white70, size: 16),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
