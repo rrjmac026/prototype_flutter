@@ -1119,37 +1119,6 @@ class _WateringScheduleDialogState extends State<WateringScheduleDialog> {
               },
             ),
 
-            // Moisture settings
-            const Divider(),
-            const Text('Moisture Settings',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const Text('Moisture Threshold'),
-            Slider(
-              value: _settings.moistureThreshold,
-              min: 0,
-              max: 100,
-              divisions: 20,
-              label: '${_settings.moistureThreshold.round()}%',
-              onChanged: (value) {
-                setState(() {
-                  _settings = _settings.copyWith(moistureThreshold: value);
-                });
-              },
-            ),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'auto', label: Text('Auto')),
-                ButtonSegment(value: 'scheduled', label: Text('Scheduled')),
-                ButtonSegment(value: 'manual', label: Text('Manual')),
-              ],
-              selected: {_settings.moistureMode},
-              onSelectionChanged: (selection) {
-                setState(() {
-                  _settings = _settings.copyWith(moistureMode: selection.first);
-                });
-              },
-            ),
-
             // Label
             const SizedBox(height: 16),
             const Text('Label (optional)',
@@ -1360,38 +1329,7 @@ class _FertilizingScheduleDialogState extends State<FertilizingScheduleDialog> {
               },
             ),
 
-            // Fertilizer settings
-            const Divider(),
-            const Text('Fertilizer Settings',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const Text('Amount'),
-            Slider(
-              value: _settings.fertilizerAmount,
-              min: 0,
-              max: 100,
-              divisions: 10,
-              label: '${_settings.fertilizerAmount.round()}%',
-              onChanged: (value) {
-                setState(() {
-                  _settings = _settings.copyWith(fertilizerAmount: value);
-                });
-              },
-            ),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'scheduled', label: Text('Scheduled')),
-                ButtonSegment(value: 'manual', label: Text('Manual')),
-              ],
-              selected: {_settings.fertilizerMode},
-              onSelectionChanged: (selection) {
-                setState(() {
-                  _settings =
-                      _settings.copyWith(fertilizerMode: selection.first);
-                });
-              },
-            ),
-
-            // Label and enabled toggle (similar to WateringScheduleDialog)
+            // Label and enabled toggle
             const SizedBox(height: 16),
             const Text('Label (optional)',
                 style: TextStyle(fontWeight: FontWeight.bold)),

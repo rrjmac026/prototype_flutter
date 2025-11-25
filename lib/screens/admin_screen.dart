@@ -8,7 +8,6 @@ import 'package:prototype/services/api_service.dart';
 import 'package:prototype/screens/audit_log_screen.dart';
 import 'package:prototype/screens/profile_screen.dart';
 import 'package:prototype/screens/reports_screen.dart';
-import 'package:prototype/screens/schedule_screen.dart';
 // Add these imports for admin views:
 import 'package:prototype/screens/admin/dashboard_view.dart';
 import 'package:prototype/screens/admin/users_management_view.dart';
@@ -32,7 +31,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   void _onAccount(BuildContext context) {
-    setState(() => _selectedIndex = 4);
+    setState(() => _selectedIndex = 3);
   }
 
   @override
@@ -72,7 +71,6 @@ class _AdminScreenState extends State<AdminScreen> {
     final items = <Map<String, dynamic>>[
       {'icon': Icons.dashboard, 'label': 'Dashboard'},
       {'icon': Icons.people, 'label': 'Users'},
-      {'icon': Icons.schedule, 'label': 'Schedule'},
       {'icon': Icons.description, 'label': 'Audit'},
       {'icon': Icons.account_circle, 'label': 'Profile'},
     ];
@@ -179,10 +177,8 @@ class _AdminScreenState extends State<AdminScreen> {
       case 1:
         return UsersManagementView();
       case 2:
-        return const ScheduleScreen();
-      case 3:
         return const AuditLogScreen();
-      case 4:
+      case 3:
         return const ProfileScreen();
       default:
         return Center(child: Text('Page $index'));

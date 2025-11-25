@@ -853,8 +853,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildAdminCard(),
             const SizedBox(height: 16),
           ],
-          _buildGenerateReportCard(),
-          const SizedBox(height: 16),
+          if (!isAdmin) ...[
+            _buildGenerateReportCard(),
+            const SizedBox(height: 16),
+          ],
           _buildSettingsSection(context),
         ],
       ),
@@ -1089,43 +1091,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
               const Divider(height: 1),
-              _buildSettingsGroup(
-                title: 'Notifications',
-                icon: Icons.notifications_outlined,
-                children: [
-                  _buildSettingsTile(
-                    icon: Icons.notification_important_outlined,
-                    title: settings.getLocalizedText('Push Notifications'),
-                    trailing: Switch.adaptive(
-                      value: settings.pushEnabled,
-                      onChanged: (value) {
-                        settings.setNotifications(
-                            value, settings.messageEnabled);
-                        AuditLogger.logUserAction(
-                          'push_notifications_changed',
-                          'User toggled push notifications to $value',
-                        );
-                      },
+              if (!context.read<AuthProvider>().isAdmin()) ...[
+                _buildSettingsGroup(
+                  title: 'Notifications',
+                  icon: Icons.notifications_outlined,
+                  children: [
+                    _buildSettingsTile(
+                      icon: Icons.notification_important_outlined,
+                      title: settings.getLocalizedText('Push Notifications'),
+                      trailing: Switch.adaptive(
+                        value: settings.pushEnabled,
+                        onChanged: (value) {
+                          settings.setNotifications(
+                              value, settings.messageEnabled);
+                          AuditLogger.logUserAction(
+                            'push_notifications_changed',
+                            'User toggled push notifications to $value',
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  _buildSettingsTile(
-                    icon: Icons.message_outlined,
-                    title: settings.getLocalizedText('Message Notifications'),
-                    trailing: Switch.adaptive(
-                      value: settings.messageEnabled,
-                      onChanged: (value) {
-                        settings.setNotifications(
-                            settings.pushEnabled, value);
-                        AuditLogger.logUserAction(
-                          'message_notifications_changed',
-                          'User toggled message notifications to $value',
-                        );
-                      },
+                    _buildSettingsTile(
+                      icon: Icons.message_outlined,
+                      title: settings.getLocalizedText('Message Notifications'),
+                      trailing: Switch.adaptive(
+                        value: settings.messageEnabled,
+                        onChanged: (value) {
+                          settings.setNotifications(
+                              settings.pushEnabled, value);
+                          AuditLogger.logUserAction(
+                            'message_notifications_changed',
+                            'User toggled message notifications to $value',
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const Divider(height: 1),
+                  ],
+                ),
+                const Divider(height: 1),
+              ],
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
