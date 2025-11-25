@@ -32,7 +32,6 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   void _onAccount(BuildContext context) {
-    // Instead of navigating, switch to profile tab
     setState(() => _selectedIndex = 4);
   }
 
@@ -40,7 +39,7 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Admin Dashboard'),
+        title: const Text('Admin'),
         backgroundColor: Colors.green.shade700,
         elevation: 0,
       ),
@@ -51,7 +50,6 @@ class _AdminScreenState extends State<AdminScreen> {
             return _buildAccessDeniedScreen(context);
           }
 
-          // Main content area (page content)
           return SafeArea(
             child: Column(
               children: [
@@ -94,70 +92,49 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // navigation icons row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: List.generate(items.length, (index) {
-                final item = items[index];
-                final selected = _selectedIndex == index;
-                return Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _selectedIndex = index),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: selected
-                          ? BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.green.shade200),
-                            )
-                          : null,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            item['icon'],
-                            color: selected ? Colors.green.shade700 : Colors.grey.shade600,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            item['label'],
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: selected ? Colors.green.shade700 : Colors.grey.shade600,
-                              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                            ),
-                          ),
-                        ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(items.length, (index) {
+            final item = items[index];
+            final selected = _selectedIndex == index;
+            return Expanded(
+              child: InkWell(
+                onTap: () => setState(() => _selectedIndex = index),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: selected
+                      ? BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.green.shade200),
+                        )
+                      : null,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        item['icon'],
+                        color: selected ? Colors.green.shade700 : Colors.grey.shade600,
                       ),
-                    ),
-                  ),
-                );
-              }),
-            ),
-            const SizedBox(height: 8),
-            // action buttons row (Logout only, Account/Profile is now a tab)
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _onLogout(context),
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Logout'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade600,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item['label'],
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                          color: selected ? Colors.green.shade700 : Colors.grey.shade600,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ],
+              ),
+            );
+          }),
         ),
       ),
     );
@@ -177,24 +154,18 @@ class _AdminScreenState extends State<AdminScreen> {
           Text(
             'Access Denied',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.red.shade700,
-                ),
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'You do not have permission to access this page.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
           ),
           const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade400,
-            ),
-            child: const Text('Go Back'),
+          ElevatedButton.icon(
+            onPressed: () => _onLogout(context),
+            icon: const Icon(Icons.logout),
+            label: const Text('Go to Login'),
           ),
         ],
       ),
@@ -204,22 +175,17 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget _buildContent(int index) {
     switch (index) {
       case 0:
-        // DashboardView can remain if you have a custom admin dashboard
         return DashboardView();
       case 1:
-        // UsersManagementView can remain if you have a custom admin users view
         return UsersManagementView();
       case 2:
-        // Use the shared ScheduleScreen
         return const ScheduleScreen();
       case 3:
-        // Use the shared AuditLogScreen
         return const AuditLogScreen();
       case 4:
-        // Use the shared ProfileScreen
         return const ProfileScreen();
       default:
-        return DashboardView();
+        return Center(child: Text('Page $index'));
     }
   }
 }

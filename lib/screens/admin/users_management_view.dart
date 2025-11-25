@@ -12,6 +12,14 @@ class UsersManagementView extends StatefulWidget {
 class _UsersManagementViewState extends State<UsersManagementView> {
   bool _loading = false;
   List<dynamic> _users = [];
+  String _searchQuery = '';
+  late Future<void> _loadUsersFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsersFuture = _loadUsers();
+  }
 
   Future<void> _loadUsers() async {
     setState(() => _loading = true);
@@ -55,89 +63,230 @@ class _UsersManagementViewState extends State<UsersManagementView> {
     }
   }
 
+  List<dynamic> get _filteredUsers {
+    if (_searchQuery.isEmpty) {
+      return _users;
+    }
+    return _users
+        .where((user) {
+          final email = (user['email'] ?? user['mail'] ?? '').toString().toLowerCase();
+          final username = (user['username'] ?? user['name'] ?? '').toString().toLowerCase();
+          final query = _searchQuery.toLowerCase();
+          return email.contains(query) || username.contains(query);
+        })
+        .toList();
+  }
+
+  Color _getRoleColor(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return Colors.purple;
+      case 'user':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      body: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'User Management',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
-                    ),
-              ),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: _loading ? null : _loadUsers,
-                    icon: _loading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.refresh),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add user not implemented')));
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add User'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade400),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _users.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.people_outline, size: 48, color: Colors.grey),
-                                const SizedBox(height: 8),
-                                const Text('No users loaded'),
-                                const SizedBox(height: 12),
-                                ElevatedButton(onPressed: _loadUsers, child: const Text('Load Users')),
-                              ],
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: _users.length,
-                            separatorBuilder: (_, __) => const Divider(),
-                            itemBuilder: (context, index) {
-                              final user = _users[index];
-                              final email = user['email'] ?? user['mail'] ?? '—';
-                              final username = user['username'] ?? user['name'] ?? '—';
-                              final role = (user['role'] ?? 'user').toString();
-                              return ListTile(
-                                leading: CircleAvatar(child: Text(username.isNotEmpty ? username[0].toUpperCase() : '?')),
-                                title: Text(username),
-                                subtitle: Text(email),
-                                trailing: Text(role.toUpperCase()),
-                                onTap: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User actions not implemented')));
-                                },
-                              );
-                            },
-                          ),
+          // Header Section
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.green.shade600, Colors.teal.shade600],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
             ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'User Management',
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Manage system users and permissions',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      onPressed: _loading ? null : _loadUsers,
+                      icon: _loading
+                          ? SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.refresh, color: Colors.white),
+                      tooltip: 'Refresh users',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Search Bar
+                TextField(
+                  onChanged: (value) {
+                    setState(() => _searchQuery = value);
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Search by name or email...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () => setState(() => _searchQuery = ''),
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Users List Section
+          Expanded(
+            child: _loading && _users.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredUsers.isEmpty
+                    ? _buildEmptyState()
+                    : _buildUsersList(),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.people_outline, size: 80, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          Text(
+            _users.isEmpty ? 'No users found' : 'No results match your search',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _users.isEmpty ? 'Users will appear here' : 'Try a different search term',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.grey.shade500,
+            ),
+          ),
+          if (_users.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: ElevatedButton.icon(
+                onPressed: _loadUsers,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try Again'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade600,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUsersList() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _filteredUsers.length,
+      itemBuilder: (context, index) {
+        final user = _filteredUsers[index];
+        final email = user['email'] ?? user['mail'] ?? '—';
+        final username = user['username'] ?? user['name'] ?? '—';
+        final role = (user['role'] ?? 'user').toString();
+        final roleColor = _getRoleColor(role);
+        final initials = username.isNotEmpty ? username[0].toUpperCase() : '?';
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 1,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            leading: CircleAvatar(
+              backgroundColor: roleColor.withOpacity(0.2),
+              child: Text(
+                initials,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: roleColor,
+                ),
+              ),
+            ),
+            title: Text(
+              username,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+            subtitle: Text(
+              email,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: roleColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: roleColor.withOpacity(0.3)),
+              ),
+              child: Text(
+                role.toUpperCase(),
+                style: TextStyle(
+                  color: roleColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('User actions not implemented')),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
